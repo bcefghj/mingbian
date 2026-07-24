@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>司南 · 研判报告</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<style>
+  :root{--bg:#080b12;--card:#111a2b;--card2:#0d1524;--line:#1e2b44;--txt:#e9eefb;--dim:#8394b5;--gold:#e9b949;--cyan:#41d4e8;--grn:#43d17f;--red:#f36f6f;--amber:#f0a742;--blue:#5b8cff}
+  body{background:var(--bg);color:var(--txt);font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.65;margin:0}
+  .wrap{max-width:860px;margin:0 auto;padding:28px 20px 70px}
+  .top{border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between}
+  .logo{color:var(--gold);letter-spacing:5px;font-size:14px;font-weight:700}
+  .tid{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--dim);background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:10px 0;word-break:break-all}
+  .verdict{background:linear-gradient(135deg,#12203a,#0e1626);border:1px solid #26375a;border-radius:14px;padding:18px 20px;display:flex;gap:18px;align-items:center;margin-bottom:16px}
+  .vlabel{font-size:12px;color:var(--gold)}.vmain{font-size:18px;font-weight:800;margin-top:3px}
+  .gauge{width:96px;height:96px;position:relative;flex-shrink:0}.gauge .val{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}.gauge .pct{font-size:23px;font-weight:800}.gauge .cf{font-size:10px;color:var(--dim)}
+  .block{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+  .block h3{font-size:14px;color:var(--cyan);margin-bottom:10px}
+  .ec{background:var(--card2);border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:10px;padding:10px 12px;margin:6px 0}
+  .ec b{font-size:13.5px}.ec .f{font-size:12.5px;color:#cdd8f5;margin-top:3px}
+  .sc .row{display:flex;justify-content:space-between;font-size:13px}.bar{height:8px;background:#0a1120;border-radius:5px;overflow:hidden;margin:3px 0}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--blue))}
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin:8px 0}th,td{border:1px solid var(--line);padding:7px 9px;text-align:left}th{background:#0a1120}
+  .md h1{font-size:22px}.md h2{font-size:17px;color:var(--gold);border-bottom:1px solid var(--line);padding-bottom:5px}.md h3{font-size:14px;color:var(--cyan)}
+  .md blockquote{border-left:3px solid var(--gold);background:#0a1120;padding:8px 14px;border-radius:0 8px 8px 0}
+  .md code{background:#0a1120;padding:2px 6px;border-radius:4px}
+  a{color:var(--cyan);text-decoration:none}
+  .s-up{color:var(--grn)}.s-down{color:var(--red)}.s-mid{color:var(--blue)}.s-warn{color:var(--amber)}
+</style></head>
+<body><div class="wrap">
+  <div class="top"><span class="logo">◆ 司南 SINAN</span><a href="../">回首页问一个新问题 →</a></div>
+  <div class="tid" id="tid" style="display:none"></div>
+  <div id="viz"></div>
+  <div class="block"><div class="md" id="md">加载中…</div></div>
+</div>
+<script>
+const esc=s=>(s==null?"":String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const STANCE={"看多":"s-up","看空":"s-down","中性":"s-mid","存疑":"s-warn","高风险":"s-down"};
+const id=location.pathname.split("/").filter(Boolean).pop();
+fetch("../api/report/"+id).then(r=>r.json()).then(d=>{
+  document.title="司南 · "+(d.question||"研判报告");
+  document.getElementById("md").innerHTML=marked.parse(d.markdown||"（报告为空）");
+  if(d.taskId){const t=document.getElementById("tid");t.style.display="block";t.textContent="InfiniSynapse taskId: "+d.taskId+" （可在平台后台核验调用日志）"}
+  const m=d.meta;if(!m||!Object.keys(m).length)return;let h="";const ov=m.overall||{};
+  const pct=ov.probability!=null?Math.round(ov.probability*100):null;
+  h+=`<div class="verdict"><div style="flex:1"><div class="vlabel">司南结论</div><div class="vmain">${esc(ov.verdict||'—')}</div></div>`;
+  if(pct!=null){const c=pct/100*283;h+=`<div class="gauge"><svg viewBox="0 0 100 100" style="transform:rotate(-90deg)"><circle cx="50" cy="50" r="45" fill="none" stroke="#182742" stroke-width="9"/><circle cx="50" cy="50" r="45" fill="none" stroke="#41d4e8" stroke-width="9" stroke-linecap="round" stroke-dasharray="${c} 283"/></svg><div class="val"><div class="pct">${pct}%</div><div class="cf">置信 ${esc(ov.confidence||'')}</div></div></div>`;}
+  h+=`</div>`;
+  if((m.experts||[]).length){h+=`<div class="block"><h3>◈ 专家团研判</h3>`+m.experts.map(e=>`<div class="ec"><b>${esc(e.name||e.key)}</b> <span class="${STANCE[e.stance]||'s-mid'}">${esc(e.stance||'')}</span> · 置信${esc(e.confidence||'')}<div class="f">${esc(e.finding||'')}</div></div>`).join("")+`</div>`;}
+  if((m.scenarios||[]).length){h+=`<div class="block"><h3>◈ 概率场景</h3>`+m.scenarios.map(s=>{const p=Math.round((s.probability||0)*100);return `<div class="sc"><div class="row"><span>${esc(s.name)}</span><b>${p}%</b></div><div class="bar"><i style="width:${p}%"></i></div><div style="font-size:11.5px;color:var(--dim)">${esc(s.basis||'')}</div></div>`}).join("")+`</div>`;}
+  if((m.signals||[]).length){h+=`<div class="block"><h3>◈ 信号证据表</h3><table><tr><th>信号</th><th>数据</th><th>含义</th><th>来源</th><th>置信</th></tr>`+m.signals.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.value||'')}</td><td>${esc(s.meaning||'')}</td><td>${esc(s.source||'')}</td><td>${esc(s.confidence||'')}</td></tr>`).join("")+`</table></div>`;}
+  if((m.relations||[]).length){h+=`<div class="block"><h3>◈ 关联发现</h3>`+m.relations.map(r=>`<div style="font-size:13px;padding:4px 0;border-bottom:1px dashed var(--line)"><b>${esc(r.from)}</b> <span style="color:var(--gold)">→</span> <b>${esc(r.to)}</b> · ${esc(r.rel||'')}</div>`).join("")+`</div>`;}
+  document.getElementById("viz").innerHTML=h;
+}).catch(e=>{document.getElementById("md").innerHTML="报告未找到"});
+</script>
+</body></html>
