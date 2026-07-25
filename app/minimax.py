@@ -6,7 +6,7 @@ import asyncio
 import httpx
 from .prompts import SYSTEM_METHODOLOGY, EXPERT_ROSTER
 from .experts import pick_experts
-from .infini import split_meta
+from .infini import split_meta, clean_markdown
 
 BASE = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1").rstrip("/")
 KEY = os.getenv("MINIMAX_API_KEY", "")
@@ -50,7 +50,7 @@ async def _prologue(question: str, emit):
 async def run_analysis(question: str, task_text: str, emit):
     if not KEY:
         raise RuntimeError("MINIMAX_API_KEY 未配置")
-    await emit("status", {"step": "plan", "message": f"启用引擎：MiniMax（{MODEL}）"})
+    await emit("status", {"step": "plan", "message": "专家团就绪，开始取证"})
     await _prologue(question, emit)
 
     roster = "\n".join(f"- {e['name']}：{e['role']}" for e in EXPERT_ROSTER)
@@ -103,16 +103,26 @@ async def run_analysis(question: str, task_text: str, emit):
                     if now - last_emit >= 0.35 or len(md) < 80:
                         last_emit = now
                         disp, _ = split_meta(md)
-                        await emit("text", {"markdown": disp})
+                        # 流式阶段也尽量藏住思维链
+                        if "<think>" in md.lower() and "</think>" not in md.lower():
+                            continue  # 思维块未闭合前不推给前端
+                        await emit("text", {"markdown": clean_markdown(disp) or disp})
                 except Exception:
                     continue
 
     if not md.strip():
-        raise RuntimeError("MiniMax 未返回内容")
+        raise RuntimeError("未返回内容")
     display, meta = split_meta(md)
     await emit("text", {"markdown": display})
     if meta and meta.get("experts"):
-        await emit("experts", {"keys": [e.get("key") for e in meta["experts"] if e.get("key")]})
+        keys = []
+        for e in meta["experts"]:
+            k = e.get("key")
+            if k == "redteam":
+                k = "contra"
+            if k:
+                keys.append(k)
+        await emit("experts", {"keys": keys})
     await _thought(emit, "reflect", "红队反方与证据置信度已写入报告；请核对背离与边界声明。", expert="contra", step="analyze")
     return {"taskId": None, "markdown": display, "meta": meta, "share_url": "", "engine": "minimax"}
 

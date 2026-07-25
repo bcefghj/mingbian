@@ -24,6 +24,36 @@ def _h(stream=False):
     return h
 
 
+def clean_markdown(markdown: str) -> str:
+    """去掉模型思维链 / 英文草稿泄漏，只保留面向用户的中文报告。"""
+    if not markdown:
+        return markdown
+    text = markdown
+    # MiniMax / 推理模型常见思维标签
+    text = re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.I)
+    text = re.sub(r"</?think>", "", text, flags=re.I)
+    # 英文 CoT / 草稿段落（出现在中文报告后时整段丢弃）
+    cut_markers = [
+        r"\nThe user is asking",
+        r"\nI need to be careful",
+        r"\nLet me structure",
+        r"\nNow I'm organizing",
+        r"\nWriting the comprehensive",
+        r"\nI should acknowledge",
+        r"\nFor the actual analysis",
+    ]
+    for pat in cut_markers:
+        m = re.search(pat, text)
+        if m:
+            text = text[: m.start()]
+            break
+    # 从第一个中文标题开始（去掉前言废话）
+    m = re.search(r"(^|\n)(#\s*[^\n]*[\u4e00-\u9fff][^\n]*)", text)
+    if m:
+        text = text[m.start(2) :]
+    return text.strip()
+
+
 def split_meta(markdown: str):
     """从报告里抽出 sinan-meta JSON；返回 (纯展示markdown, meta_dict_or_None)。"""
     if not markdown:
@@ -41,7 +71,7 @@ def split_meta(markdown: str):
             except Exception:
                 meta = None
         display = (markdown[:m.start()] + markdown[m.end():]).strip()
-    return display, meta
+    return clean_markdown(display), meta
 
 
 def _extract_markdown(task_json: dict) -> str:

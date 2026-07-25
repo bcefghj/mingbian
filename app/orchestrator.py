@@ -16,18 +16,18 @@ async def run(question: str, emit):
         order = [minimax, infini]
     last_err = None
     for eng in order:
-        name = "InfiniSynapse" if eng is infini else "MiniMax"
         try:
-            await emit("status", {"step": "plan", "message": f"启用引擎：{name}"})
+            await emit("status", {"step": "plan", "message": "唤醒研判引擎…"})
             result = await eng.run_analysis(question, task_text, emit)
             if result and result.get("markdown", "").strip():
                 return result
-            last_err = RuntimeError(f"{name} 返回空报告")
-            await emit("status", {"step": "plan", "message": f"{name} 空报告，切换兜底…"})
+            last_err = RuntimeError("引擎返回空报告")
+            await emit("status", {"step": "plan", "message": "通道波动，正在切换备用通道…"})
         except Exception as e:
             last_err = e
-            msg = str(e)[:100]
-            await emit("status", {"step": "plan", "message": f"{name} 不可用（{msg}），切换兜底…"})
-            await emit("thought", {"kind": "reflect", "text": f"{name} 失败：{msg}。正在切换引擎…"})
+            msg = str(e)[:80]
+            # 用户可见文案不暴露具体供应商名称
+            await emit("status", {"step": "plan", "message": "主通道暂不可用，切换备用通道…"})
+            await emit("thought", {"kind": "reflect", "text": f"取证通道受阻（{msg}），改走备用路径继续研判…"})
             continue
-    raise RuntimeError(f"所有引擎均失败：{last_err}")
+    raise RuntimeError(f"研判失败：{last_err}")
