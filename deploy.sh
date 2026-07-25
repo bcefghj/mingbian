@@ -17,10 +17,33 @@ SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "==> [1/7] 检查环境"
 [ "$(id -u)" = "0" ] || { echo "请用 root 运行 (sudo bash deploy.sh)"; exit 1; }
 command -v nginx >/dev/null || { echo "未找到 nginx"; exit 1; }
-if ss -ltnp 2>/dev/null | grep -q ":$PORT "; then echo "⚠ 端口 $PORT 已被占用，已安全退出，未改动任何东西。请换端口。"; exit 1; fi
+
+# 本槽位以前跑的是司南（同端口 8767）。升级时先体面停掉旧服务，
+# 否则「端口已被占用」会让部署脚本直接退出，新代码永远上不去。
+if systemctl list-unit-files 2>/dev/null | grep -q '^sinan\.service'; then
+  echo "   发现旧服务 sinan.service，停用并让出端口 $PORT"
+  systemctl stop sinan.service >/dev/null 2>&1 || true
+  systemctl disable sinan.service >/dev/null 2>&1 || true
+fi
+# 若还有残留进程占着端口（手工起的），也清掉——只动本端口，不动 8766
+if ss -ltnp 2>/dev/null | grep -q ":$PORT "; then
+  echo "   端口 $PORT 仍被占用，尝试结束监听进程"
+  fuser -k "${PORT}/tcp" >/dev/null 2>&1 || true
+  sleep 1
+fi
+if ss -ltnp 2>/dev/null | grep -q ":$PORT "; then
+  echo "⚠ 端口 $PORT 仍被占用且无法释放，已安全退出，未改动其它项目。"
+  ss -ltnp | grep ":$PORT " || true
+  exit 1
+fi
 
 echo "==> [2/7] 同步代码到 $DIR（不碰其它项目，保留已有 .env）"
 mkdir -p "$DIR"
+# 若旧司南目录还在、新目录还没有 .env，把密钥带过来，免得到处找
+if [ ! -f "$DIR/.env" ] && [ -f /opt/projects/sinan/.env ]; then
+  cp /opt/projects/sinan/.env "$DIR/.env"
+  echo "   已从 /opt/projects/sinan/.env 继承密钥"
+fi
 rsync -a --exclude='.venv' --exclude='__pycache__' --exclude='.git' --exclude='reports/*' \
       --exclude='.env' "$SRC_DIR"/ "$DIR"/
 mkdir -p "$DIR/reports"
