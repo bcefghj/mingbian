@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>司南 SINAN · 多智能体证据研判引擎</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <style>
   :root{
     --bg:#080b12;--bg2:#0e1420;--card:#111a2b;--card2:#0d1524;--line:#1e2b44;--line2:#26375a;
@@ -128,14 +129,23 @@
   .rellist{font-size:13px;display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
   .rellist .r{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#0a1120}
   .rellist .r b{color:#dbe6ff}.rellist .r .arw{color:var(--gold);margin:0 6px;font-size:12px}
-  .kg-box{background:#0a1120;border:1px solid var(--line);border-radius:12px;overflow:hidden}
-  .kg-legend{display:flex;flex-wrap:wrap;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--dim)}
+  .kg-box{background:#0a1120;border:1px solid var(--line);border-radius:12px;overflow:hidden;position:relative}
+  .kg-legend{display:flex;flex-wrap:wrap;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--dim);align-items:center}
   .kg-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
-  .kg-svg{width:100%;height:360px;display:block}
+  .kg-stage{position:relative;height:420px}
+  .kg-svg{width:100%;height:100%;display:block;touch-action:none}
+  .kg-tip{position:absolute;left:12px;bottom:10px;font-size:11px;color:var(--dim2);pointer-events:none}
+  .kg-fs{position:absolute;right:10px;top:10px;z-index:2;background:#152036;border:1px solid var(--line);color:var(--cyan);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
+  .kg-fs:hover{border-color:var(--cyan)}
+  #kgModal{display:none;position:fixed;inset:0;z-index:80;background:rgba(4,8,16,.92);flex-direction:column}
+  #kgModal.on{display:flex}
+  #kgModal .mh{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);color:var(--txt)}
+  #kgModal .mh button{background:#152036;border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:8px 12px;cursor:pointer}
+  #kgModalSvg{flex:1;width:100%}
   .md-toggle{font-size:13px;color:var(--dim);cursor:pointer;margin:10px 0 6px;user-select:none}
   .md-toggle:hover{color:var(--cyan)}
   .asof{font-size:12px;color:var(--dim2);margin-top:6px}
-  @media(max-width:860px){.rellist{grid-template-columns:1fr}.kg-svg{height:280px}}
+  @media(max-width:860px){.rellist{grid-template-columns:1fr}.kg-stage{height:320px}}
   .diverg{background:rgba(240,167,66,.07);border:1px solid rgba(240,167,66,.25);border-radius:10px;padding:10px 14px;font-size:13px;color:#f2d9ad;margin-top:6px}
   .report-md{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 26px}
   .report-md h1{font-size:23px}.report-md h2{font-size:18px;color:var(--gold);border-bottom:1px solid var(--line);padding-bottom:6px;margin:1.1em 0 .5em}
@@ -210,6 +220,15 @@
 </div>
 <footer>司南 SINAN · 证据驱动多智能体研判 · 报告为公开证据的概率研判，不构成投资/法律/医疗建议</footer>
 
+<div id="kgModal">
+  <div class="mh">
+    <button type="button" onclick="closeKgFullscreen()">← 返回报告</button>
+    <span style="font-weight:700">知识图谱 · 结论与证据溯源网络</span>
+    <span class="muted" style="margin-left:auto">滚轮缩放 · 拖拽平移 · 拖动节点</span>
+  </div>
+  <svg id="kgModalSvg"></svg>
+</div>
+
 <script>
 const EXAMPLES=["中国房价还会跌多久？","现在适合买黄金吗？","比特币见底了吗？","AI 是不是泡沫？","这家公司值不值得入职？","这个「稳赚」项目是不是骗局？"];
 const $=s=>document.querySelector(s);
@@ -260,12 +279,12 @@ function renderReport(q,markdown,meta,streaming){
     if((meta.experts||[]).length){html+=`<div class="block"><h3>◈ 专家团研判（${meta.experts.length}）</h3><div class="ecards">`+meta.experts.map(e=>`<div class="ecard"><div class="en2">${esc(e.name||e.key)} <span class="stance ${STANCE[e.stance]||'s-mid'}">${esc(e.stance||'')}</span></div><div class="rl">置信 <span class="${CF[e.confidence]||'cf-m'}">${esc(e.confidence||'')}</span></div><div class="fd">${esc(e.finding||'')}</div></div>`).join("")+`</div></div>`;}
     if((meta.scenarios||[]).length){html+=`<div class="block"><h3>◈ 概率场景</h3><div class="scenarios">`+meta.scenarios.map(s=>{const p=Math.round((s.probability||0)*100);return `<div class="sc"><div class="row"><span>${esc(s.name)}</span><b>${p}%</b></div><div class="bar"><i style="width:${p}%"></i></div><div class="basis">${esc(s.basis||'')}</div></div>`}).join("")+`</div></div>`;}
     if((meta.signals||[]).length){html+=`<div class="block"><h3>◈ 信号证据表（无证据不立论）</h3><table class="sig"><tr><th>层</th><th>信号</th><th>数据</th><th>含义</th><th>来源</th><th>置信</th></tr>`+meta.signals.map(s=>`<tr><td>${esc(s.layer||'')}</td><td>${esc(s.name)}</td><td>${esc(s.value||'')}</td><td>${esc(s.meaning||'')}</td><td>${esc(s.source||'')}</td><td class="${CF[s.confidence]||'cf-m'}">${esc(s.confidence||'')}</td></tr>`).join("")+`</table></div>`;}
-    if((meta.relations||[]).length||(meta.entities||[]).length){
-      html+=`<div class="block"><h3>◈ 知识图谱 · 关联发现</h3>`+
-        knowledgeGraph(meta.entities||[],meta.relations||[])+
-        `<div class="rellist" style="margin-top:12px">`+
+    // 08 风格：结论—证据—实体 知识图谱（有 meta 即画，不依赖 relations 非空）
+    if(!streaming && ((meta.entities&&meta.entities.length)||(meta.relations&&meta.relations.length)||(meta.experts&&meta.experts.length)||(meta.signals&&meta.signals.length))){
+      html+=`<div class="block"><h3>◈ 知识图谱 · 结论与证据溯源网络</h3>`+kgShell()+
+        ((meta.relations||[]).length?`<div class="rellist" style="margin-top:12px">`+
         (meta.relations||[]).slice(0,16).map(r=>`<div class="r"><b>${esc(r.from)}</b><span class="arw">→</span><b>${esc(r.to)}</b><div class="muted" style="margin-top:3px">${esc(r.rel||'')}</div></div>`).join("")+
-        `</div></div>`;
+        `</div>`:"")+`</div>`;
     }
     if((meta.divergences||[]).length){html+=`<div class="block"><h3>◈ 关键背离</h3>`+meta.divergences.map(d=>`<div class="diverg">⚠ ${esc(d)}</div>`).join("")+`</div>`;}
   }
@@ -282,49 +301,149 @@ function renderReport(q,markdown,meta,streaming){
   }
   const mount=$("#reportMount")||$("#rmain");
   mount.innerHTML=html;
+  if(meta && !streaming){
+    window._lastMeta=meta;
+    requestAnimationFrame(()=>paintKnowledgeGraph("#kgSvg", meta, false));
+  }
 }
 
-function knowledgeGraph(entities,relations){
-  // 收集所有出现过的节点名
-  const names=[];
-  const typeOf={};
-  (entities||[]).forEach(n=>{
-    const name=n.name||n.id; if(!name) return;
-    if(!names.includes(name)) names.push(name);
-    typeOf[name]=n.type||"指标";
+function kgShell(){
+  return `<div class="kg-box">
+    <div class="kg-legend">
+      <span><i style="background:#5b8cff"></i>报告</span>
+      <span><i style="background:#43d17f"></i>结论</span>
+      <span><i style="background:#e9b949"></i>证据</span>
+      <span><i style="background:#9d7bff"></i>实体</span>
+      <span style="margin-left:auto;opacity:.75">对齐 08 · 可拖拽 / 缩放</span>
+    </div>
+    <div class="kg-stage">
+      <button class="kg-fs" type="button" onclick="openKgFullscreen()">全屏图谱</button>
+      <svg id="kgSvg" class="kg-svg"></svg>
+      <div class="kg-tip">滚轮缩放 · 拖拽画布 · 拖动节点</div>
+    </div>
+  </div>`;
+}
+
+/** 从 meta 构建 报告→结论→证据 + 实体关系 网络（08 同构） */
+function buildKgData(meta){
+  const nodes=[], links=[];
+  const idset=new Set();
+  const add=(id,label,type,extra)=>{
+    if(!id||idset.has(id)) return;
+    idset.add(id);
+    nodes.push({id,label:String(label||id).slice(0,22),type,extra:extra||""});
+  };
+  const topic=(meta.topic||meta.overall&&meta.overall.verdict||"司南研判").slice(0,20);
+  add("report", topic, "report", meta.overall&&meta.overall.verdict||"");
+
+  (meta.experts||[]).slice(0,7).forEach((e,i)=>{
+    const id="claim_"+ (e.key||i);
+    add(id, e.name||("专家"+i), "claim", e.finding||e.stance||"");
+    links.push({source:"report", target:id, rel:"派遣"});
   });
-  (relations||[]).forEach(r=>{
-    [r.from,r.to].forEach(x=>{ if(x && !names.includes(x)){ names.push(x); typeOf[x]="实体"; }});
+  (meta.scenarios||[]).slice(0,4).forEach((s,i)=>{
+    const id="sc_"+i;
+    add(id, s.name||("情景"+i), "claim", ((s.probability!=null)?Math.round(s.probability*100)+"% ":"")+(s.basis||""));
+    links.push({source:"report", target:id, rel:"情景"});
   });
-  const nodes=names.slice(0,14); if(nodes.length<2) return "";
-  const W=720,H=360,cx=W/2,cy=H/2;
-  const R=Math.min(W,H)*0.34;
-  const pos={};
-  nodes.forEach((name,i)=>{
-    const a=-Math.PI/2+i*2*Math.PI/nodes.length;
-    // 略微抖动半径，避免完全正圆太呆
-    const rr=R*(0.82+((i%3)*0.09));
-    pos[name]={x:cx+rr*Math.cos(a),y:cy+rr*Math.sin(a)};
+  (meta.signals||[]).slice(0,10).forEach((s,i)=>{
+    const id="ev_"+i;
+    add(id, s.name||("证据"+i), "evidence", [s.value,s.source,s.confidence].filter(Boolean).join(" · "));
+    // 挂到对应层或报告
+    const claims=nodes.filter(n=>n.type==="claim");
+    const tgt=claims[i%Math.max(claims.length,1)]||nodes[0];
+    links.push({source:tgt.id, target:id, rel:"证据"});
   });
-  const COLORS={人:"#f36f6f",机构:"#5b8cff",账号:"#9d7bff",产品:"#41d4e8",资产:"#e9b949",指标:"#43d17f",事件:"#f0a742",实体:"#8394b5"};
-  const marker=`<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#e9b949" opacity=".7"/></marker></defs>`;
-  let edges="";
-  (relations||[]).forEach((r,idx)=>{
-    const a=pos[r.from],b=pos[r.to]; if(!a||!b) return;
-    const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
-    // 轻微弧线
-    const cx2=mx+(b.y-a.y)*0.08, cy2=my-(b.x-a.x)*0.08;
-    const label=(r.rel||"").slice(0,10);
-    edges+=`<path d="M${a.x},${a.y} Q${cx2},${cy2} ${b.x},${b.y}" fill="none" stroke="#e9b949" stroke-width="1.2" opacity=".45" marker-end="url(#arr)"/>`;
-    if(label) edges+=`<text x="${cx2}" y="${cy2}" font-size="9" fill="#8fa0c0" text-anchor="middle">${esc(label)}</text>`;
+  const entMap={};
+  (meta.entities||[]).slice(0,12).forEach((e,i)=>{
+    const name=e.name||e.id||("实体"+i);
+    const id="ent_"+name;
+    entMap[name]=id; entMap[e.id||""]=id;
+    add(id, name, "entity", e.type||"");
+    links.push({source:"report", target:id, rel:"涉及"});
   });
-  let nn=nodes.map(name=>{
-    const p=pos[name]; const t=typeOf[name]||"实体"; const col=COLORS[t]||COLORS["实体"];
-    const label=String(name).slice(0,8);
-    return `<g><circle cx="${p.x}" cy="${p.y}" r="16" fill="${col}" fill-opacity=".18" stroke="${col}" stroke-width="1.6"/><circle cx="${p.x}" cy="${p.y}" r="5" fill="${col}"/><text x="${p.x}" y="${p.y-22}" font-size="11" fill="#dbe6ff" text-anchor="middle" font-weight="600">${esc(label)}</text><text x="${p.x}" y="${p.y+28}" font-size="9" fill="#6b7a99" text-anchor="middle">${esc(t)}</text></g>`;
-  }).join("");
-  const legend=["机构","资产","指标","产品","人","事件","账号"].map(t=>`<span><i style="background:${COLORS[t]}"></i>${t}</span>`).join("");
-  return `<div class="kg-box"><div class="kg-legend">${legend}<span style="margin-left:auto;opacity:.7">实体 ${nodes.length} · 关系 ${(relations||[]).length}</span></div><svg class="kg-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${marker}${edges}${nn}</svg></div>`;
+  (meta.relations||[]).forEach(r=>{
+    const a=entMap[r.from]||(idset.has("ent_"+r.from)?"ent_"+r.from:null);
+    const b=entMap[r.to]||(idset.has("ent_"+r.to)?"ent_"+r.to:null);
+    if(a&&b) links.push({source:a,target:b,rel:r.rel||"关联"});
+    else if(r.from&&r.to){
+      const ia="ent_"+r.from, ib="ent_"+r.to;
+      add(ia,r.from,"entity",""); add(ib,r.to,"entity","");
+      links.push({source:ia,target:ib,rel:r.rel||"关联"});
+    }
+  });
+  // 至少保证能画
+  if(nodes.length<2){ add("n1","信号","evidence",""); links.push({source:"report",target:"n1",rel:""}); }
+  return {nodes,links};
+}
+
+let _kgSim=null;
+function paintKnowledgeGraph(sel, meta, fullscreen){
+  if(typeof d3==="undefined") return;
+  const el=document.querySelector(sel); if(!el) return;
+  const {nodes,links}=buildKgData(meta||{});
+  const COLOR={report:"#5b8cff",claim:"#43d17f",evidence:"#e9b949",entity:"#9d7bff"};
+  const RADIUS={report:22,claim:14,evidence:9,entity:12};
+  if(_kgSim){try{_kgSim.stop()}catch(e){}}
+  d3.select(el).selectAll("*").remove();
+  const width=el.clientWidth||720, height=el.clientHeight||420;
+  const svg=d3.select(el).attr("viewBox",[0,0,width,height]);
+  const root=svg.append("g");
+  svg.call(d3.zoom().scaleExtent([0.35,2.8]).on("zoom",ev=>root.attr("transform",ev.transform)));
+
+  const sim=d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d=>d.id).distance(d=>{
+      const t=typeof d.target==="object"?d.target.type:null;
+      return t==="evidence"?70: t==="entity"?110: 130;
+    }).strength(0.7))
+    .force("charge", d3.forceManyBody().strength(-320))
+    .force("center", d3.forceCenter(width/2, height/2))
+    .force("collide", d3.forceCollide().radius(d=>RADIUS[d.type]+10));
+  _kgSim=sim;
+
+  const link=root.append("g").attr("stroke","#3a4a6a").attr("stroke-opacity",0.85)
+    .selectAll("line").data(links).join("line").attr("stroke-width",1.4);
+
+  const linkLabel=root.append("g").selectAll("text").data(links.filter(l=>l.rel)).join("text")
+    .text(d=>String(d.rel).slice(0,8))
+    .attr("font-size",9).attr("fill","#6b7a99").attr("text-anchor","middle");
+
+  const node=root.append("g").selectAll("g").data(nodes).join("g").style("cursor","pointer")
+    .call(d3.drag()
+      .on("start",(ev,d)=>{if(!ev.active)sim.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;})
+      .on("drag",(ev,d)=>{d.fx=ev.x;d.fy=ev.y;})
+      .on("end",(ev,d)=>{if(!ev.active)sim.alphaTarget(0);d.fx=null;d.fy=null;}));
+
+  node.append("circle")
+    .attr("r",d=>RADIUS[d.type])
+    .attr("fill",d=>COLOR[d.type])
+    .attr("fill-opacity",0.9)
+    .attr("stroke","#0a1120").attr("stroke-width",2);
+
+  node.append("text")
+    .text(d=>d.label)
+    .attr("x",d=>RADIUS[d.type]+5).attr("y",4)
+    .attr("font-size",d=>d.type==="report"?13:11)
+    .attr("fill","#dbe6ff");
+
+  node.append("title").text(d=>d.extra?`${d.label}\n${d.extra}`:d.label);
+
+  sim.on("tick",()=>{
+    link.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y)
+        .attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
+    linkLabel.attr("x",d=>(d.source.x+d.target.x)/2).attr("y",d=>(d.source.y+d.target.y)/2);
+    node.attr("transform",d=>`translate(${d.x},${d.y})`);
+  });
+}
+
+function openKgFullscreen(){
+  const m=$("#kgModal"); if(!m||!window._lastMeta) return;
+  m.classList.add("on");
+  requestAnimationFrame(()=>paintKnowledgeGraph("#kgModalSvg", window._lastMeta, true));
+}
+function closeKgFullscreen(){
+  const m=$("#kgModal"); if(m) m.classList.remove("on");
+  if(window._lastMeta) requestAnimationFrame(()=>paintKnowledgeGraph("#kgSvg", window._lastMeta, false));
 }
 
 async function openDemo(id){
