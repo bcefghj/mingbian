@@ -13,7 +13,8 @@ import httpx
 BASE = os.getenv("INFINI_BASE_URL", "https://app.infinisynapse.cn").rstrip("/")
 KEY = os.getenv("INFINI_API_KEY", "")
 WEBSEARCH = os.getenv("INFINI_ENABLE_WEBSEARCH", "true").lower() == "true"
-TIMEOUT = int(os.getenv("ANALYZE_TIMEOUT", "300"))
+# Infini 余额不足时会很快 SSE 报错；整体等待不宜过长，避免拖垮体验
+TIMEOUT = int(os.getenv("INFINI_TIMEOUT", os.getenv("ANALYZE_TIMEOUT", "90")))
 
 
 def _h(stream=False):
@@ -71,6 +72,8 @@ async def run_analysis(question: str, task_text: str, emit):
     conn_id = str(uuid.uuid4())
     partial = {"text": ""}
     ready = {"v": False}
+    task_box = {"id": None}
+    fatal = {"err": None}
 
     async with httpx.AsyncClient(timeout=None) as client:
         async def sse_listener():
@@ -78,7 +81,10 @@ async def run_analysis(question: str, task_text: str, emit):
                 async with client.stream("GET", f"{BASE}/api/ai/events?connId={conn_id}",
                                          headers=_h(stream=True), timeout=TIMEOUT + 30) as r:
                     async for line in r.aiter_lines():
-                        if not line or not line.startswith("data:"):
+                        # SSE 可能是 event: xxx / data: xxx 分行
+                        if line.startswith("event:"):
+                            continue
+                        if not line.startswith("data:"):
                             continue
                         raw = line[5:].strip()
                         if not raw or raw == "ping":
@@ -87,17 +93,38 @@ async def run_analysis(question: str, task_text: str, emit):
                             evt = json.loads(raw)
                         except Exception:
                             continue
+                        # 兼容两种：外层 {event,data} 或 data 本体已含 taskId
                         et = evt.get("event") or evt.get("type") or ""
-                        pl = evt.get("data") or evt
-                        msg = pl.get("message") if isinstance(pl, dict) else None
-                        if et in ("message.partial", "message.update", "message.add"):
-                            txt = (msg or {}).get("text") or (msg or {}).get("content") or ""
-                            if txt and isinstance(txt, str) and len(txt) > len(partial["text"]):
+                        pl = evt.get("data") if isinstance(evt.get("data"), dict) else evt
+                        if not isinstance(pl, dict):
+                            pl = {}
+                        tid = pl.get("taskId") or evt.get("taskId")
+                        if tid and not task_box["id"]:
+                            task_box["id"] = tid
+                            await emit("plan", {"taskId": tid, "message": "任务已创建，专家团联网取证中..."})
+                        msg = pl.get("message") if isinstance(pl.get("message"), dict) else {}
+                        ask = (msg or {}).get("ask") or ""
+                        txt = (msg or {}).get("text") or (msg or {}).get("content") or ""
+                        # 余额 / 鉴权失败：立刻失败，别干等 5 分钟
+                        if ask == "api_req_failed" or (isinstance(txt, str) and any(
+                            k in txt for k in ("余额不足", "请充值", "unauthorized", "Unauthorized", "无效")
+                        )):
+                            fatal["err"] = txt or "InfiniSynapse API 请求失败"
+                            ready["v"] = True
+                            return
+                        if et in ("message.partial", "message.update", "message.add") or pl.get("message"):
+                            if txt and isinstance(txt, str) and len(txt) > len(partial["text"]) and ask != "api_req_failed":
+                                # 过滤掉失败文案当报告
+                                if "余额不足" in txt or "请充值" in txt:
+                                    fatal["err"] = txt
+                                    ready["v"] = True
+                                    return
                                 partial["text"] = txt
                                 disp, _ = split_meta(txt)
                                 await emit("text", {"markdown": disp})
-                        elif et == "state.ready":
-                            ready["v"] = True
+                        if et == "state.ready" or pl.get("taskId"):
+                            if et == "state.ready":
+                                ready["v"] = True
             except Exception:
                 await emit("status", {"step": "collect", "message": "（实时通道波动，转轮询）"})
 
@@ -118,7 +145,19 @@ async def run_analysis(question: str, task_text: str, emit):
                                       "chatSettings": {"mode": "act"}})
         res.raise_for_status()
         j = res.json()
-        task_id = (j.get("state") or {}).get("taskId") or j.get("taskId") or (j.get("data") or {}).get("taskId")
+        task_id = (
+            (j.get("state") or {}).get("taskId")
+            or j.get("taskId")
+            or (j.get("data") or {}).get("taskId")
+            or ((j.get("data") or {}).get("state") or {}).get("taskId")
+            or task_box["id"]
+        )
+        # 等 SSE 把 taskId 推过来（newTask 响应体里常常没有）
+        for _ in range(20):
+            if task_box["id"] or fatal["err"]:
+                break
+            await asyncio.sleep(0.25)
+        task_id = task_box["id"] or task_id
         if task_id:
             await emit("plan", {"taskId": task_id, "message": "任务已创建，专家团联网取证中..."})
         await emit("status", {"step": "collect", "message": "多源取证 · 抽取信号与实体"})
@@ -127,14 +166,23 @@ async def run_analysis(question: str, task_text: str, emit):
         deadline = asyncio.get_event_loop().time() + TIMEOUT
         poll = 0
         while asyncio.get_event_loop().time() < deadline:
-            await asyncio.sleep(4)
+            if fatal["err"]:
+                listener.cancel()
+                raise RuntimeError(fatal["err"])
+            await asyncio.sleep(2)
             poll += 1
+            if not task_id:
+                task_id = task_box["id"]
             if not task_id:
                 try:
                     lst = await client.get(f"{BASE}/api/ai_task/list", headers=_h())
-                    arr = (lst.json().get("data") or {}).get("list") or lst.json().get("list") or []
+                    data = lst.json().get("data") or {}
+                    # 官方字段是 items，不是 list
+                    arr = data.get("items") or data.get("list") or lst.json().get("list") or []
                     if arr:
                         task_id = arr[0].get("taskId") or arr[0].get("id")
+                        if task_id:
+                            await emit("plan", {"taskId": task_id, "message": "已定位任务，继续取证…"})
                 except Exception:
                     pass
             if not task_id:
@@ -147,11 +195,14 @@ async def run_analysis(question: str, task_text: str, emit):
             is_running = tj.get("data", tj).get("isRunning")
             md = _extract_markdown(tj)
             if md and len(md) > len(markdown):
+                if "余额不足" in md or "请充值" in md:
+                    listener.cancel()
+                    raise RuntimeError(md[:80])
                 markdown = md
                 disp, _ = split_meta(markdown)
                 await emit("text", {"markdown": disp})
             if ready["v"] or is_running is False:
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(1.0)
                 try:
                     tr = await client.get(f"{BASE}/api/ai_task/tasks", params={"taskId": task_id}, headers=_h())
                     md2 = _extract_markdown(tr.json())
@@ -166,8 +217,10 @@ async def run_analysis(question: str, task_text: str, emit):
         if partial["text"] and len(partial["text"]) > len(markdown):
             markdown = partial["text"]
         listener.cancel()
+        if fatal["err"]:
+            raise RuntimeError(fatal["err"])
         if not markdown.strip():
-            raise RuntimeError("InfiniSynapse 未返回有效报告（超时或结构变化）")
+            raise RuntimeError("InfiniSynapse 未返回有效报告（超时/余额不足/结构变化）")
 
         display, meta = split_meta(markdown)
         share_url = ""

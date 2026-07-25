@@ -13,7 +13,7 @@ from starlette.routing import Route
 from starlette.requests import Request
 from starlette.responses import JSONResponse, HTMLResponse, StreamingResponse
 
-from . import orchestrator, store, demos, infini
+from . import orchestrator, store, demos, infini, minimax
 from .prompts import CAPABILITIES, EXPERT_ROSTER, build_deepen_text
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web")
@@ -98,11 +98,18 @@ async def deepen(request):
         return JSONResponse({"error": "annotation required"}, status_code=400)
     rep = store.get_report(rid) or demos.get_demo(rid) or {}
     text = build_deepen_text(rep.get("question", ""), section, annotation, rep.get("markdown", ""))
-    try:
-        md = await infini.run_deepen(text)
-    except Exception as e:
-        return JSONResponse({"error": f"深化失败：{e}"}, status_code=500)
-    return JSONResponse({"markdown": md})
+    primary = (os.getenv("PRIMARY_ENGINE") or "minimax").lower()
+    engines = [minimax, infini] if primary != "infini" else [infini, minimax]
+    last = None
+    for eng in engines:
+        try:
+            md = await eng.run_deepen(text)
+            if md and str(md).strip():
+                return JSONResponse({"markdown": md, "engine": getattr(eng, "__name__", "")})
+        except Exception as e:
+            last = e
+            continue
+    return JSONResponse({"error": f"深化失败：{last}"}, status_code=500)
 
 
 async def share(request):

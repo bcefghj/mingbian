@@ -62,19 +62,38 @@
   .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;position:sticky;top:16px}
   .p-t{font-size:12px;color:var(--dim2);letter-spacing:1.5px;margin:2px 0 8px}
   .dag{list-style:none}
-  .dag li{padding:8px 0 8px 26px;position:relative;color:var(--dim);font-size:13.5px}
-  .dag li::before{content:"";position:absolute;left:4px;top:13px;width:9px;height:9px;border-radius:50%;background:#2a3a5e}
-  .dag li::after{content:"";position:absolute;left:8px;top:22px;width:1px;height:calc(100% - 14px);background:#20304e}
+  .dag li{padding:8px 0 8px 28px;position:relative;color:var(--dim);font-size:13.5px;transition:color .2s}
+  .dag li::before{content:"";position:absolute;left:3px;top:12px;width:11px;height:11px;border-radius:50%;background:#2a3a5e;border:2px solid #2a3a5e}
+  .dag li::after{content:"";position:absolute;left:8px;top:24px;width:1px;height:calc(100% - 14px);background:#20304e}
   .dag li:last-child::after{display:none}
-  .dag li.act{color:var(--txt)}.dag li.act::before{background:var(--cyan);box-shadow:0 0 0 4px rgba(65,212,232,.15)}
-  .dag li.ok::before{background:var(--grn)}
-  .experts-mini{margin-top:14px;display:flex;flex-wrap:wrap;gap:6px}
-  .emini{font-size:11.5px;border:1px solid var(--line);border-radius:16px;padding:3px 10px;color:var(--dim2)}
-  .emini.on{color:var(--txt);border-color:var(--cyan);background:rgba(65,212,232,.08)}
+  .dag li.act{color:var(--txt)}.dag li.act::before{background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 0 4px rgba(65,212,232,.18);animation:pulse 1.4s ease-in-out infinite}
+  .dag li.ok{color:#b8f0cd}.dag li.ok::before{background:var(--grn);border-color:var(--grn);box-shadow:none;animation:none}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+  .live-msg{font-size:12px;color:var(--cyan);margin:8px 0 4px;min-height:18px}
+  .experts-mini{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
+  .emini{font-size:11.5px;border:1px solid var(--line);border-radius:16px;padding:3px 10px;color:var(--dim2);transition:.2s}
+  .emini.on{color:var(--txt);border-color:var(--cyan);background:rgba(65,212,232,.08);box-shadow:0 0 0 1px rgba(65,212,232,.15)}
   .badge{display:inline-block;font-size:11px;padding:3px 9px;border-radius:6px}
   .badge.g{background:rgba(67,209,127,.12);color:var(--grn);border:1px solid rgba(67,209,127,.3)}
   .badge.c{background:rgba(65,212,232,.12);color:var(--cyan);border:1px solid rgba(65,212,232,.3)}
+  .badge.m{background:rgba(157,123,255,.12);color:var(--violet);border:1px solid rgba(157,123,255,.35)}
   .taskid{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--dim2);word-break:break-all;margin-top:10px;padding:8px;background:#0a1120;border-radius:8px;border:1px solid var(--line)}
+  /* thought stream (对齐 08 Agent 思维流) */
+  .stream{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:14px;max-height:340px;overflow:auto}
+  .stream .st-h{font-size:12px;color:var(--dim2);letter-spacing:1px;margin-bottom:10px}
+  .thought{display:flex;gap:10px;margin:0 0 12px;animation:fadeUp .35s ease}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .thought .dot{width:28px;height:28px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;font-size:12px;font-weight:700}
+  .thought .body{flex:1;min-width:0}
+  .thought .kind{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600}
+  .thought .who{font-size:11px;color:var(--dim2);margin-left:6px}
+  .thought .txt{font-size:13.5px;color:#cdd8f5;margin-top:4px;line-height:1.55}
+  .k-plan .dot{background:rgba(91,140,255,.18);color:var(--blue)}.k-plan .kind{background:rgba(91,140,255,.15);color:var(--blue)}
+  .k-dispatch .dot{background:rgba(233,185,73,.18);color:var(--gold)}.k-dispatch .kind{background:rgba(233,185,73,.15);color:var(--gold)}
+  .k-action .dot{background:rgba(240,167,66,.18);color:var(--amber)}.k-action .kind{background:rgba(240,167,66,.15);color:var(--amber)}
+  .k-finding .dot{background:rgba(67,209,127,.18);color:var(--grn)}.k-finding .kind{background:rgba(67,209,127,.15);color:var(--grn)}
+  .k-reflect .dot{background:rgba(243,111,111,.18);color:var(--red)}.k-reflect .kind{background:rgba(243,111,111,.15);color:var(--red)}
+  #reportMount{min-width:0}
   /* report body */
   .rmain{min-width:0}
   .verdict{background:linear-gradient(135deg,#12203a,#0e1626);border:1px solid var(--line2);border-radius:16px;padding:20px 22px;display:flex;gap:22px;align-items:center;margin-bottom:16px}
@@ -168,18 +187,20 @@
           <li data-k="analyze">③ 关联发现 · 交叉研判</li>
           <li data-k="done">④ 概率场景 · 成文</li>
         </ul>
-        <div class="p-t" style="margin-top:14px">派遣的专家</div>
+        <div class="live-msg" id="livemsg">待命</div>
+        <div class="p-t" style="margin-top:10px">派遣的专家</div>
         <div class="experts-mini" id="emini"></div>
         <div id="enginebadge" style="margin-top:12px"></div>
         <div class="taskid" id="taskid" style="display:none"></div>
       </div>
       <div class="rmain" id="rmain">
-        <div class="block"><div class="muted">正在唤醒司南，专家团联网取证中…</div></div>
+        <div class="stream" id="stream"><div class="st-h">实时思维流 · AGENT STREAM</div><div id="thoughts"></div></div>
+        <div id="reportMount"></div>
       </div>
     </div>
   </div>
 </div>
-<footer>司南 SINAN · 由 <b style="color:var(--cyan)">InfiniSynapse</b> 数据分析引擎驱动 · 报告为公开证据的概率研判，不构成投资/法律/医疗建议</footer>
+<footer>司南 SINAN · InfiniSynapse × MiniMax 双引擎 · 报告为公开证据的概率研判，不构成投资/法律/医疗建议</footer>
 
 <script>
 const EXAMPLES=["中国房价还会跌多久？","现在适合买黄金吗？","比特币见底了吗？","AI 是不是泡沫？","这家公司值不值得入职？","这个「稳赚」项目是不是骗局？"];
@@ -187,50 +208,63 @@ const $=s=>document.querySelector(s);
 let ROSTER=[];
 function chips(){$("#chips").innerHTML=EXAMPLES.map(e=>`<span class="chip" onclick="fill(this)">${e}</span>`).join("")}
 function fill(el){$("#q").value=el.textContent;$("#q").focus();window.scrollTo({top:0,behavior:'smooth'})}
-async function loadCaps(){try{const d=await(await fetch("api/capabilities")).json();ROSTER=d.experts||[];$("#caps").innerHTML=d.capabilities.map(c=>`<div class="cap"><div class="n">${c.name}</div><div class="d">${c.desc}</div></div>`).join("")}catch(e){}}
+async function loadCaps(){try{const d=await(await fetch("api/capabilities")).json();ROSTER=d.experts||[];nameByKey={};ROSTER.forEach(e=>nameByKey[e.key]=e.name);$("#caps").innerHTML=d.capabilities.map(c=>`<div class="cap"><div class="n">${c.name}</div><div class="d">${c.desc}</div></div>`).join("")}catch(e){}}
 async function loadDemos(){try{const d=await(await fetch("api/demos")).json();$("#demos").innerHTML=(d.demos||[]).map(x=>`<div class="demo" onclick="openDemo('${x.id}')"><div class="tag2">${x.tag||'示例研判'}</div><div class="q">${x.question}</div><div class="h">${x.headline||''}</div><div class="meta"><span>◆ ${x.experts||''} 位专家</span><span>◆ ${x.evidence||''} 条证据</span></div><div class="go">查看完整研判 →</div></div>`).join("")}catch(e){}}
 function goHome(){$("#result").style.display="none";$("#home").style.display="block";if(window._c)window._c.abort()}
-function setStep(k){const o=["intake","collect","analyze","done"],i=o.indexOf(k);document.querySelectorAll("#dag li").forEach(li=>{const j=o.indexOf(li.dataset.k);li.classList.toggle("act",j===i);li.classList.toggle("ok",j<i)})}
-function lightExperts(keys){document.querySelectorAll("#emini .emini").forEach(e=>{if(keys.includes(e.dataset.k))e.classList.add("on")})}
-function renderEminis(active){const roster=ROSTER.length?ROSTER:[];$("#emini").innerHTML=roster.map(e=>`<span class="emini" data-k="${e.key}">${e.name}</span>`).join("")}
+function setStep(k){const o=["intake","collect","analyze","done"],i=o.indexOf(k);document.querySelectorAll("#dag li").forEach(li=>{const j=o.indexOf(li.dataset.k);li.classList.toggle("act",j===i&&j>=0);li.classList.toggle("ok",j>=0&&j<i)})}
+function setLive(msg){const el=$("#livemsg");if(el)el.textContent=msg||""}
+function lightExperts(keys){const set=new Set(keys||[]);document.querySelectorAll("#emini .emini").forEach(e=>{if(set.has(e.dataset.k))e.classList.add("on")})}
+function lightOne(key){const el=document.querySelector(`#emini .emini[data-k="${key}"]`);if(el)el.classList.add("on")}
+function renderEminis(){const roster=ROSTER.length?ROSTER:[];$("#emini").innerHTML=roster.map(e=>`<span class="emini" data-k="${e.key}">${e.name}</span>`).join("")}
 const CF={"高":"cf-h","中":"cf-m","低":"cf-l","存疑":"cf-x"};
 const STANCE={"看多":"s-up","看空":"s-down","中性":"s-mid","存疑":"s-warn","高风险":"s-down"};
-let cur={};
+const KIND_LABEL={plan:"规划",dispatch:"派遣",action:"执行",finding:"发现",reflect:"反思"};
+const KIND_ICON={plan:"◎",dispatch:"➔",action:"⚙",finding:"✦",reflect:"↺"};
+let cur={}, thoughts=[], nameByKey={};
 
 function esc(s){return (s==null?"":String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function resetStream(){thoughts=[];const t=$("#thoughts");if(t)t.innerHTML="";const s=$("#stream");if(s)s.style.display="block";const m=$("#reportMount");if(m)m.innerHTML=""}
+function pushThought(d){
+  const kind=d.kind||"action";
+  const who=d.expert?(nameByKey[d.expert]||d.expert):"";
+  thoughts.push(d);
+  const box=$("#thoughts"); if(!box) return;
+  const div=document.createElement("div");
+  div.className="thought k-"+kind;
+  div.innerHTML=`<div class="dot">${KIND_ICON[kind]||"·"}</div><div class="body"><span class="kind">${KIND_LABEL[kind]||kind}</span>${who?`<span class="who">${esc(who)}</span>`:""}<div class="txt">${esc(d.text||"")}</div></div>`;
+  box.appendChild(div);
+  const stream=$("#stream"); if(stream) stream.scrollTop=stream.scrollHeight;
+  if(d.step) setStep(d.step);
+  if(d.text) setLive(d.text.slice(0,42)+(d.text.length>42?"…":""));
+  if(d.expert) lightOne(d.expert);
+}
 
 function renderReport(q,markdown,meta,streaming){
   let html="";
   if(meta && Object.keys(meta).length){
     const ov=meta.overall||{};
     const pct=ov.probability!=null?Math.round(ov.probability*100):null;
-    // verdict + gauge
     html+=`<div class="verdict"><div class="vtxt"><div class="vlabel">司南结论</div><div class="vmain">${esc(ov.verdict||'—')}</div></div>`;
     if(pct!=null){const c=pct/100*283;html+=`<div class="gauge"><svg viewBox="0 0 100 100" style="transform:rotate(-90deg)"><circle cx="50" cy="50" r="45" fill="none" stroke="#182742" stroke-width="9"/><circle cx="50" cy="50" r="45" fill="none" stroke="#41d4e8" stroke-width="9" stroke-linecap="round" stroke-dasharray="${c} 283"/></svg><div class="val"><div class="pct">${pct}%</div><div class="cf">置信 ${esc(ov.confidence||'')}</div></div></div>`;}
     else if(ov.confidence){html+=`<div class="gauge"><div class="val"><div class="pct" style="font-size:19px">${esc(ov.confidence)}</div><div class="cf">整体置信</div></div></div>`;}
     html+=`</div>`;
-    // experts
     if((meta.experts||[]).length){html+=`<div class="block"><h3>◈ 专家团研判（${meta.experts.length}）</h3><div class="ecards">`+meta.experts.map(e=>`<div class="ecard"><div class="en2">${esc(e.name||e.key)} <span class="stance ${STANCE[e.stance]||'s-mid'}">${esc(e.stance||'')}</span></div><div class="rl">置信 <span class="${CF[e.confidence]||'cf-m'}">${esc(e.confidence||'')}</span></div><div class="fd">${esc(e.finding||'')}</div></div>`).join("")+`</div></div>`;}
-    // scenarios
     if((meta.scenarios||[]).length){html+=`<div class="block"><h3>◈ 概率场景</h3><div class="scenarios">`+meta.scenarios.map(s=>{const p=Math.round((s.probability||0)*100);return `<div class="sc"><div class="row"><span>${esc(s.name)}</span><b>${p}%</b></div><div class="bar"><i style="width:${p}%"></i></div><div class="basis">${esc(s.basis||'')}</div></div>`}).join("")+`</div></div>`;}
-    // signals table
     if((meta.signals||[]).length){html+=`<div class="block"><h3>◈ 信号证据表（无证据不立论）</h3><table class="sig"><tr><th>层</th><th>信号</th><th>数据</th><th>含义</th><th>来源</th><th>置信</th></tr>`+meta.signals.map(s=>`<tr><td>${esc(s.layer||'')}</td><td>${esc(s.name)}</td><td>${esc(s.value||'')}</td><td>${esc(s.meaning||'')}</td><td>${esc(s.source||'')}</td><td class="${CF[s.confidence]||'cf-m'}">${esc(s.confidence||'')}</td></tr>`).join("")+`</table></div>`;}
-    // relations / entities
     if((meta.relations||[]).length||(meta.entities||[]).length){
       html+=`<div class="block"><h3>◈ 关联发现</h3><div class="relwrap"><div class="rellist">`+
         (meta.relations||[]).map(r=>`<div class="r"><b>${esc(r.from)}</b><span class="arw">→</span><b>${esc(r.to)}</b> · ${esc(r.rel||'')}</div>`).join("")+
         `</div><div>`+graphSVG(meta.entities||[],meta.relations||[])+`</div></div></div>`;
     }
-    // divergences
     if((meta.divergences||[]).length){html+=`<div class="block"><h3>◈ 关键背离</h3>`+meta.divergences.map(d=>`<div class="diverg">⚠ ${esc(d)}</div>`).join("")+`</div>`;}
   }
-  // full markdown
   html+=`<div class="block" style="padding:0;background:transparent;border:none"><div class="report-md ${streaming?'cursorblink':''}" id="md">${marked.parse(markdown||"")}</div></div>`;
   if(!streaming){
-    html+=`<div class="deepen"><div class="dt">🔍 对结论有疑问？输入批注，让司南顺着你的质疑再深挖一层（08「批注深化」）</div><div class="drow"><input id="anno" placeholder="例如：为什么没考虑政策强刺激的可能？"><button onclick="deepen()">深化</button></div><div class="out" id="deepout"></div></div>`;
+    html+=`<div class="deepen"><div class="dt">🔍 对结论有疑问？输入批注，让司南顺着你的质疑再深挖一层（对齐 08「批注深化」）</div><div class="drow"><input id="anno" placeholder="例如：为什么没考虑政策强刺激的可能？"><button onclick="deepen()">深化</button></div><div class="out" id="deepout"></div></div>`;
     html+=`<div class="actions"><button onclick="copyLink()">🔗 复制分享链接</button><button onclick="window.print()">🖨 导出</button><span id="verify"></span></div>`;
   }
-  $("#rmain").innerHTML=html;
+  const mount=$("#reportMount")||$("#rmain");
+  mount.innerHTML=html;
 }
 
 function graphSVG(entities,relations){
@@ -245,10 +279,11 @@ function graphSVG(entities,relations){
 
 async function openDemo(id){
   $("#home").style.display="none";$("#result").style.display="block";window.scrollTo(0,0);
-  renderEminis();const d=await(await fetch("api/demo/"+id)).json();
+  renderEminis();resetStream();$("#stream").style.display="none";
+  const d=await(await fetch("api/demo/"+id)).json();
   $("#rq").textContent=d.question;setStep("done");document.querySelectorAll("#dag li").forEach(li=>li.classList.add("ok"));
-  const keys=(d.meta&&d.meta.experts||[]).map(e=>e.key);lightExperts(keys);
-  $("#enginebadge").innerHTML='<span class="badge c">示例 · InfiniSynapse 研判</span>';
+  const keys=(d.meta&&d.meta.experts||[]).map(e=>e.key);lightExperts(keys);setLive("示例报告已就绪");
+  $("#enginebadge").innerHTML='<span class="badge c">示例研判 · 预置证据链</span>';
   if(d.taskId){$("#taskid").style.display="block";$("#taskid").textContent="taskId: "+d.taskId}
   cur={id,question:d.question,markdown:d.markdown,meta:d.meta};
   renderReport(d.question,d.markdown,d.meta,false);
@@ -257,9 +292,12 @@ async function openDemo(id){
 
 function ask(){const q=$("#q").value.trim();if(q)analyze(q)}
 async function analyze(q){
-  $("#home").style.display="none";$("#result").style.display="block";window.scrollTo(0,0);renderEminis();
-  $("#rq").textContent=q;$("#rmain").innerHTML='<div class="block"><div class="muted">正在唤醒司南，专家团联网取证中…</div></div>';
-  $("#taskid").style.display="none";$("#enginebadge").innerHTML="";setStep("intake");
+  $("#home").style.display="none";$("#result").style.display="block";window.scrollTo(0,0);
+  renderEminis();resetStream();
+  $("#rq").textContent=q;
+  $("#taskid").style.display="none";$("#enginebadge").innerHTML='<span class="badge m">引擎唤醒中…</span>';
+  setStep("intake");setLive("正在唤醒司南…");
+  pushThought({kind:"plan",text:"收到问题，开始组建专家评审团…",step:"intake"});
   const ctrl=new AbortController();window._c=ctrl;let md="",meta=null;
   try{
     const resp=await fetch("api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question:q}),signal:ctrl.signal});
@@ -268,17 +306,23 @@ async function analyze(q){
       let parts=buf.split("\n\n");buf=parts.pop();
       for(const p of parts){const line=p.split("\n").find(l=>l.startsWith("data:"));if(!line)continue;let ev;try{ev=JSON.parse(line.slice(5).trim())}catch(e){continue}
         const {event,data}=ev;
-        if(event==="status"){if(data.step)setStep(data.step)}
-        else if(event==="plan"){if(data.taskId){$("#taskid").style.display="block";$("#taskid").textContent="taskId: "+data.taskId}$("#enginebadge").innerHTML='<span class="badge c">InfiniSynapse 实时研判中…</span>';setStep("collect")}
-        else if(event==="text"){setStep("analyze");md=data.markdown;renderReport(q,md,null,true)}
-        else if(event==="done"){md=data.markdown;meta=data.meta;setStep("done");document.querySelectorAll("#dag li").forEach(li=>li.classList.add("ok"));lightExperts((meta&&meta.experts||[]).map(e=>e.key));
-          const eng=data.engine==="minimax"?"MiniMax 兜底":"InfiniSynapse 官方 API";$("#enginebadge").innerHTML=`<span class="badge g">✔ ${eng} · 已完成</span>`;
+        if(event==="status"){if(data.step)setStep(data.step);if(data.message)setLive(data.message)}
+        else if(event==="thought"){pushThought(data)}
+        else if(event==="expert_on"){lightOne(data.key)}
+        else if(event==="experts"){lightExperts(data.keys||[])}
+        else if(event==="plan"){if(data.taskId){$("#taskid").style.display="block";$("#taskid").textContent="taskId: "+data.taskId}$("#enginebadge").innerHTML='<span class="badge c">InfiniSynapse 实时研判中…</span>';setStep("collect");if(data.message)setLive(data.message)}
+        else if(event==="text"){setStep("analyze");setLive("首席研判官流式成文中…");md=data.markdown;renderReport(q,md,null,true);$("#enginebadge").innerHTML='<span class="badge m">MiniMax / Infini 成文中…</span>'}
+        else if(event==="done"){md=data.markdown;meta=data.meta;setStep("done");document.querySelectorAll("#dag li").forEach(li=>{li.classList.add("ok");li.classList.remove("act")});lightExperts((meta&&meta.experts||[]).map(e=>e.key));
+          const eng=data.engine==="minimax"?"MiniMax":"InfiniSynapse";
+          $("#enginebadge").innerHTML=`<span class="badge g">✔ ${eng} · 研判完成</span>`;
+          setLive("研判完成");
+          pushThought({kind:"finding",text:`报告已生成（引擎：${eng}）。可批注深化或复制分享。`,step:"done"});
           cur={id:data.report_id,question:q,markdown:md,meta};renderReport(q,md,meta,false);
           $("#verify")&&($("#verify").innerHTML=data.share_url?`<a href="${data.share_url}" target="_blank">在 InfiniSynapse 核验 ↗</a>`:"");}
-        else if(event==="error"){$("#rmain").innerHTML='<div class="block"><div style="color:var(--red)">司南沉默了：'+esc(data.message)+'</div></div>'}
+        else if(event==="error"){setLive("失败");pushThought({kind:"reflect",text:"司南沉默了："+(data.message||""),step:"analyze"});$("#reportMount").innerHTML='<div class="block"><div style="color:var(--red)">司南沉默了：'+esc(data.message)+'</div></div>'}
       }
     }
-  }catch(e){$("#rmain").innerHTML='<div class="block"><div style="color:var(--red)">研判失败：'+esc(e.message)+'</div></div>'}
+  }catch(e){if(e.name==="AbortError")return;setLive("失败");$("#reportMount").innerHTML='<div class="block"><div style="color:var(--red)">研判失败：'+esc(e.message)+'</div></div>'}
 }
 
 async function deepen(){
