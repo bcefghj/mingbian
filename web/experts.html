@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>专家册 · 明辨 MINGBIAN</title>
+<script>
+(function () {
+  var b = location.pathname.replace(/(report|trace|graph)\/[^/]*$/, '')
+    .replace(/(dashboard|experts|ledger|bench|about)\/?$/, '');
+  if (b.slice(-1) !== '/') b += '/';
+  document.write('<base href="' + b + '">');
+})();
+</script>
+<link rel="icon" href="./static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./static/mb.css">
+</head>
+<body>
+<header id="topbar"></header>
+<div class="wrap-wide" style="padding-top:24px">
+  <div class="page-head" style="padding-top:0">
+    <h1>专家册</h1>
+    <p>16 位可派遣专家，分决策、分析、取证三层。每一位都绑定了自己偏好的权威源，
+      并且是可以被单独触发的取证能力，而不是提示词里的一个称谓。</p>
+  </div>
+
+  <div id="layers"></div>
+
+  <section class="mt28">
+    <div class="card">
+      <div class="card-title">派遣规则</div>
+      <div class="t3 fs13 mb12">
+        决策层三位（首席研判官、质检官、红队官）永远在场。其余按问题关键词命中的领域挑选，
+        并在报告里写清「为什么是这几位」——组队过程不该是黑箱。
+      </div>
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr><th>问题命中</th><th>判定领域</th><th>追加派遣</th></tr></thead>
+        <tbody id="rules"></tbody>
+      </table></div>
+    </div>
+  </section>
+</div>
+<footer id="footer"></footer>
+
+<script src="./static/mb-core.js"></script>
+<script>
+(function () {
+  const { $, esc, getJSON } = MB;
+  MB.mountTopbar('专家册');
+  MB.mountFooter();
+
+  const LAYER_DESC = {
+    '决策': '统合、质检与证伪。这三位每次研判都在场。',
+    '分析': '各自带着一套判断框架，负责把事实变成判断。',
+    '取证': '负责把散落在互联网上的一手材料捞回来。',
+  };
+
+  const RULES = [
+    ['房价 / 楼市 / 买房 / 学区', '楼市', '宏观周期、市场定价、政策法规、舆情情报、时间线还原'],
+    ['黄金 / 金价 / 白银 / 避险', '贵金属', '市场定价、宏观周期、价格追踪、舆情情报'],
+    ['比特币 / BTC / 加密 / 以太', '加密资产', '市场定价、政策法规、舆情情报、司法风控'],
+    ['AI / 芯片 / 算力 / 泡沫', '科技产业', '行业竞争、技术可行性、市场定价、宏观周期'],
+    ['入职 / offer / 尽调 / 跳槽', '公司尽调', '财务审计、司法风控、社区口碑、行业竞争、官方公告'],
+    ['骗局 / 稳赚 / 传销 / 非法集资', '反诈', '司法风控、关联溯源、官方公告、舆情情报、社区口碑'],
+    ['装修 / 报价 / 合同 / 建材', '消费维权', '价格追踪、司法风控、社区口碑、政策法规'],
+    ['留学 / 考研 / 考公 / 就业率', '教育决策', '宏观周期、行业竞争、社区口碑、政策法规'],
+    ['开店 / 加盟 / 创业 / 副业', '创业可行性', '行业竞争、财务审计、政策法规、社区口碑、价格追踪'],
+    ['养生 / 保健 / 致癌 / 传闻', '健康传闻', '官方公告、司法风控、舆情情报、时间线还原'],
+  ];
+
+  $('#rules').innerHTML = RULES.map(([a, b, c]) =>
+    `<tr><td class="t3 fs12">${esc(a)}</td><td><span class="tag tag-accent">${esc(b)}</span></td>` +
+    `<td class="t3 fs12">${esc(c)}</td></tr>`).join('');
+
+  getJSON('./api/meta').then(m => {
+    const es = m.experts || [];
+    const layers = ['决策', '分析', '取证'];
+    $('#layers').innerHTML = layers.map(L => {
+      const group = es.filter(e => e.layer === L);
+      return `<section class="mt16"><div class="row-between mb12">` +
+        `<h2 class="fs20">${esc(L)}层 <span class="t4 fs13">${group.length} 位</span></h2>` +
+        `<span class="t4 fs12">${esc(LAYER_DESC[L] || '')}</span></div>` +
+        `<div class="grid grid-3">` + group.map(e =>
+          `<div class="card"><div class="row-between mb8">` +
+          `<b class="t1 fs16">${esc(e.name)}</b>` +
+          `<span class="tag mono fs11">${esc(e.key)}</span></div>` +
+          `<div class="t3 fs12" style="line-height:1.7">${esc(e.role)}</div>` +
+          `<div class="t4 fs11 mt12">常用来源</div>` +
+          `<div class="row wrapflex mt4" style="gap:5px">` +
+          (e.sources || []).map(s => `<span class="tag">${esc(s)}</span>`).join('') +
+          `</div></div>`).join('') + `</div></section>`;
+    }).join('');
+  }).catch(() => {
+    $('#layers').innerHTML = '<div class="empty">读取专家名册失败。</div>';
+  });
+})();
+</script>
+</body>
+</html>

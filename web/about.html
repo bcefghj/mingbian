@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>方法论 · 明辨 MINGBIAN</title>
+<script>
+(function () {
+  var b = location.pathname.replace(/(report|trace|graph)\/[^/]*$/, '')
+    .replace(/(dashboard|experts|ledger|bench|about)\/?$/, '');
+  if (b.slice(-1) !== '/') b += '/';
+  document.write('<base href="' + b + '">');
+})();
+</script>
+<link rel="icon" href="./static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./static/mb.css">
+</head>
+<body>
+<header id="topbar"></header>
+<div class="wrap" style="padding-top:24px">
+  <div class="page-head" style="padding-top:0">
+    <h1>方法论</h1>
+    <p>这一页写清楚明辨是怎么工作的、每个数字是怎么算的，以及它<b class="t2">不能</b>做什么。
+      一个研判工具如果不敢公开自己的口径，那它给出的置信度就没有意义。</p>
+  </div>
+
+  <section class="card">
+    <div class="card-title">名字的来历</div>
+    <div class="t3 fs14" style="line-height:1.9">
+      取自《中庸》：「博学之，审问之，慎思之，明辨之，笃行之。」
+      这不只是个名字——它直接命名了流水线的五个阶段，每个阶段做什么、交付什么，都对得上。
+    </div>
+    <div class="stage-strip mt16" id="stages"></div>
+  </section>
+
+  <section class="card mt16">
+    <div class="card-title">铁律</div>
+    <div class="grid grid-2">
+      <div class="inset"><b class="t1 fs13">无证据不立论</b>
+        <div class="t3 fs12 mt8">每条实质性判断都必须绑定证据。论点强度由代码按独立来源数判定，
+          模型说自己「很有把握」一律不采信。绑不上证据的论点会被标成「无证据」并计入质检失分。</div></div>
+      <div class="inset"><b class="t1 fs13">引用必须真实存在</b>
+        <div class="t3 fs12 mt8">模型给出的每个链接后端都会真的访问一次，取到正文才算 <code>sourced</code>。
+          引用了不在证据池里的 ID，会被直接丢弃并记一条质检问题。</div></div>
+      <div class="inset"><b class="t1 fs13">「没搜到」不等于「不存在」</b>
+        <div class="t3 fs12 mt8">检索器返回的不是空数组，而是带检索范围、尝试过的关键词、索引时效的结构体。
+          任何否定陈述都必须有「检索是权威的」这一正面证明背书。</div></div>
+      <div class="inset"><b class="t1 fs13">绝不编数字填洞</b>
+        <div class="t3 fs12 mt8">取证失败时只有两条路：如实标注缺口，或者把选择权交还给你。
+          用估算数字把报告填满是最省事也最危险的做法。</div></div>
+    </div>
+  </section>
+
+  <section class="card mt16">
+    <div class="card-title">证据从哪来：双通道取证</div>
+    <div class="t3 fs13 mb12">
+      引擎自己会联网检索，明辨也自己查。两路都跑，是因为它们各有各的盲区——
+      引擎的检索由模型自主决定查什么，明辨的检索由领域规则决定往哪儿查。
+    </div>
+    <div class="grid grid-2">
+      <div class="inset"><b class="t1 fs13">InfiniSynapse 引擎自查</b>
+        <div class="t3 fs12 mt8">deepseek-v4-pro 的 agent 循环会自主发起十几轮联网检索与页面抓取。
+          这些动作在实时工作台的思维流里逐条可见，不是黑箱。</div></div>
+      <div class="inset"><b class="t1 fs13">明辨自有取证层</b>
+        <div class="t3 fs12 mt8">博查 Web Search 全网索引作主通道，返回结构化摘要与发布时间；
+          语义排序按与问题的相关度重排，滤掉关键词碰巧命中的噪声；
+          行情接口补实时数字；博查不可用时退到搜狗 / 百度 / 360 的 HTML 抓取兜底，
+          并在报告里标明本次走的是哪一级通道。</div></div>
+    </div>
+    <div class="t4 fs12 mt12">
+      为什么在意发布时间和正文摘要：可信度打分里「有没有发布日期」「时效多久」
+      「正文是否真的抓到」全是加减分项。拿不到这些字段，打分就只能靠猜。
+    </div>
+  </section>
+
+  <section class="card mt16">
+    <div class="card-title">证据的五种状态</div>
+    <div class="t3 fs13 mb12">「有证据」和「没证据」这个二分法丢掉了太多信息。我们用五种状态：</div>
+    <div id="grounding"></div>
+  </section>
+
+  <section class="card mt16">
+    <div class="card-title">来源可信度打分（0-100，纯规则）</div>
+    <div class="t3 fs13 mb12">
+      不经过模型。让模型给来源打分是不可复现也无法解释的——这套规则可以当着任何人的面手算复现。
+    </div>
+    <div class="grid grid-2">
+      <div>
+        <div class="t4 fs11 mb8">基础分：按来源类型</div>
+        <div id="baseScores"></div>
+      </div>
+      <div>
+        <div class="t4 fs11 mb8">调整项</div>
+        <div class="inset fs12 t3" style="line-height:2">
+          权威域名 <b class="mono strength-strong">+10</b><br>
+          低质聚合站 <b class="mono strength-weak">−5</b><br>
+          标注了发布日期 <b class="mono strength-strong">+6</b><br>
+          发布于一年内 <b class="mono strength-strong">+5</b> / 两年内 <b class="mono">+2</b> / 超三年 <b class="mono strength-weak">−5</b><br>
+          原文抓取成功 <b class="mono strength-strong">+6</b> / 仅拿到摘要 <b class="mono strength-weak">−8</b><br>
+          摘录超 200 字 <b class="mono strength-strong">+3</b><br>
+          未取到实证：总分封顶 <b class="mono strength-weak">20</b>
+        </div>
+      </div>
+    </div>
+    <details class="mt12"><summary class="t4 fs12 click">权威域名白名单</summary>
+      <div class="row wrapflex mt8" style="gap:5px" id="auth"></div></details>
+  </section>
+
+  <section class="card mt16">
+    <div class="card-title">论点强度的判定规则</div>
+    <div class="t3 fs13 mb12">强度不是形容词，是可计算的。规则刻意做得很简单：</div>
+    <div style="overflow-x:auto"><table class="tbl">
+      <thead><tr><th>条件</th><th>强度</th><th>含义</th></tr></thead>
+      <tbody>
+        <tr><td>≥ 2 个<b class="t1">不同域名</b>的证据</td>
+          <td><span class="strength strength-strong"><span class="glyph">●●●</span>强</span></td>
+          <td>交叉验证通过，多个独立来源相互印证</td></tr>
+        <tr><td>≥ 2 条证据但同源</td>
+          <td><span class="strength strength-moderate"><span class="glyph">●●○</span>中等</span></td>
+          <td>有据可循，但可能是同一稿源的转载</td></tr>
+        <tr><td>仅 1 条证据</td>
+          <td><span class="strength strength-weak"><span class="glyph">●○○</span>弱</span></td>
+          <td>孤证，建议自行核实</td></tr>
+        <tr><td>正反两方都有证据</td>
+          <td><span class="strength strength-contested"><span class="glyph">⚡</span>存在争议</span></td>
+          <td>会被单独提到「未解张力」面板，不强行调和</td></tr>
+        <tr><td>没有任何证据</td>
+          <td><span class="strength strength-unsupported"><span class="glyph">○○○</span>无证据</span></td>
+          <td>触发质检失分，可能导致整份报告返工</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="card mt16">
+    <div class="card-title">概率词表（对照 IPCC）</div>
+    <div class="t3 fs13 mb12">
+      「可能」这个词在不同人心里能差出 60 个百分点。所以凡是出现模糊词的地方，都能对到这张表上。
+    </div>
+    <div style="overflow-x:auto"><table class="tbl">
+      <thead><tr><th>术语</th><th>概率区间</th><th>可视化</th></tr></thead>
+      <tbody id="ipcc"></tbody>
+    </table></div>
+  </section>
+
+  <section class="card mt16">
+    <div class="card-title">指标口径</div>
+    <div id="metricDefs"></div>
+  </section>
+
+  <section class="card mt16">
+    <div class="card-title">质检与返工</div>
+    <div class="t3 fs13" style="line-height:1.9">
+      质检分两层。第一层是规则：证据条数、独立域名数、论点绑证据率、必备章节是否齐全——
+      这些永远可用、可复现。第二层是质检官 LLM 的五维评审，它能看出规则看不到的东西，
+      比如「这个维度压根没提」。LLM 挂了就回落规则分，质检不会整体失效。
+    </div>
+    <div class="grid grid-2 mt12">
+      <div class="inset"><b class="t1 fs13">打回博学补采</b>
+        <div class="t3 fs12 mt8">当问题出在「料不够」——某个论点没有独立来源、证据总数不足。
+          系统会针对这些点生成新的检索词重新取证。</div></div>
+      <div class="inset"><b class="t1 fs13">打回慎思重推</b>
+        <div class="t3 fs12 mt8">当问题出在「没想清楚」——维度覆盖不够、结构缺章节。
+          系统会带着具体问题清单要求重新推理。</div></div>
+    </div>
+    <div class="t4 fs12 mt12">
+      返工额度按档位分配：速判 0 轮、深研 1 轮、专家 2 轮。用满额度仍未达标时，
+      不达标项会如实写进报告，而不是悄悄放行。
+    </div>
+  </section>
+
+  <section class="card mt16" style="border-color:rgba(224,163,62,.3)">
+    <div class="card-title">明辨不能做什么</div>
+    <div class="t3 fs13" style="line-height:1.9">
+      它不预测未来，只整理当下可核验的证据并给出条件化判断。
+      它引用的来源可能本身就是错的——可信度打分衡量的是「来源类型和时效」，不是「内容真伪」。
+      它的检索范围限于博查全网索引、公开中文网页与部分行情接口；付费数据库、内部资料、线下信息一概拿不到。
+      同一篇稿子被多家网站转载时，我们按主域归一并做文本雷同聚类，但仍可能有漏网的洗稿副本。
+      置信度是基于给定证据的主观概率，不是统计意义上的频率保证。
+      <b class="t2">所有输出仅供决策参考，不构成投资、法律或医疗建议。</b>
+    </div>
+  </section>
+</div>
+<footer id="footer"></footer>
+
+<script src="./static/mb-core.js"></script>
+<script>
+(function () {
+  const { $, esc, getJSON } = MB;
+  MB.mountTopbar('方法论');
+  MB.mountFooter();
+
+  getJSON('./api/methodology').then(d => {
+    $('#stages').innerHTML = (d.stages || []).map(s =>
+      `<div class="stage-cell"><div class="cn">${esc(s.cn)}</div>` +
+      `<div class="en">${esc(s.title)}</div><div class="ds">${esc(s.desc)}</div></div>`).join('');
+
+    $('#grounding').innerHTML = (d.grounding || []).map(g =>
+      `<div class="row inset mt8" style="gap:12px;align-items:flex-start">` +
+      `<span class="tag mono nowrap">${esc(g.key)}</span>` +
+      `<span><b class="t1 fs13">${esc(g.label)}</b>` +
+      `<div class="t3 fs12 mt4">${esc(g.note)}</div></span></div>`).join('');
+
+    const st = d.source_types || {};
+    $('#baseScores').innerHTML = `<div class="inset">` +
+      Object.keys(st).sort((a, b) => st[b].base - st[a].base).map(k =>
+        `<div class="row-between fs12" style="padding:3px 0">` +
+        `<span class="t3">${esc(st[k].label)}</span>` +
+        `<b class="mono t1">${st[k].base}</b></div>`).join('') + `</div>`;
+
+    $('#auth').innerHTML = (d.authoritative || []).map(a =>
+      `<span class="tag mono fs11">${esc(a)}</span>`).join('');
+
+    $('#ipcc').innerHTML = (d.ipcc || []).map(x => {
+      const lo = Math.round(x.low * 100), hi = Math.round(x.high * 100);
+      return `<tr><td><b class="t1">${esc(x.term)}</b></td>` +
+        `<td class="mono t3">${lo}–${hi}%</td>` +
+        `<td><div style="position:relative;height:6px;background:var(--s2);border-radius:3px;min-width:160px">` +
+        `<i style="position:absolute;left:${lo}%;width:${Math.max(2, hi - lo)}%;top:0;bottom:0;` +
+        `background:var(--accent);opacity:.6;border-radius:3px"></i></div></td></tr>`;
+    }).join('');
+
+    const m = d.metrics || {};
+    $('#metricDefs').innerHTML = Object.keys(m).map(k =>
+      `<div class="inset mt8"><div class="row-between">` +
+      `<b class="t1 fs13">${esc(m[k].name)}</b>` +
+      `<span class="mono fs12 t3">${esc(m[k].formula)}</span></div>` +
+      `<div class="t3 fs12 mt8">${esc(m[k].why)}</div></div>`).join('');
+  }).catch(() => { });
+})();
+</script>
+</body>
+</html>

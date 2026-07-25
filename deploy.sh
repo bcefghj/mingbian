@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ============================================================
-# 司南 SINAN · 一键部署到阿里云（遵循「服务器部署说明.md」多项目隔离规范）
-# 作为「项目三」接入：独立目录 + venv + systemd(sinan.service, 8767) + 独立 nginx location(/sinan/)
+# 明辨 MINGBIAN · 一键部署到阿里云（遵循「服务器部署说明.md」多项目隔离规范）
+# 作为「项目三」接入：独立目录 + venv + systemd(mingbian.service, 8767) + 独立 nginx location(/mingbian/)
 # 绝不修改/影响 Anker（/anker，8766）及其它任何已有项目。
 # 用法（在服务器项目目录内）：  sudo bash deploy.sh
 # ============================================================
 set -euo pipefail
 
-APP="sinan"
+APP="mingbian"
 DIR="/opt/projects/$APP"
 PORT="8767"    # 项目三槽位；Anker 用 8766，绝不冲突
 SVC="$APP.service"
@@ -38,7 +38,7 @@ chmod 600 "$DIR/.env" || true
 echo "==> [5/7] 创建 systemd 服务 $SVC（端口 $PORT，仅本机监听）"
 cat > "/etc/systemd/system/$SVC" <<EOF
 [Unit]
-Description=SINAN (司南) multi-agent judgment engine
+Description=MINGBIAN (明辨) multi-agent evidence judgment engine
 After=network.target
 
 [Service]
@@ -62,26 +62,27 @@ systemctl is-active "$SVC" >/dev/null && echo "   $SVC 已启动" || { echo "启
 curl -s "http://127.0.0.1:$PORT/healthz" >/dev/null && echo "   本机健康检查通过" || echo "   ⚠ 健康检查未通过，可稍后 journalctl 排查"
 
 echo "==> [6/7] 接入 nginx（幂等；先备份，失败自动回滚，不动 Anker）"
-if grep -q "location /$APP/app/" "$NGINX_CONF"; then
+if grep -q "location /$APP/" "$NGINX_CONF"; then
   echo "   nginx 已含 /$APP/ 配置，跳过"
 else
   BAK="${NGINX_CONF}.bak.$(date +%s 2>/dev/null || echo manual)"
   cp "$NGINX_CONF" "$BAK"; echo "   已备份 nginx 配置到 $BAK"
-  echo "   插入结果：$(python3 "$DIR/deploy/insert_nginx.py" "$NGINX_CONF" "$DIR/deploy/nginx-sinan.snippet")"
+  echo "   插入结果：$(python3 "$DIR/deploy/insert_nginx.py" "$NGINX_CONF" "$DIR/deploy/nginx-mingbian.snippet")"
   if nginx -t 2>/dev/null; then systemctl reload nginx; echo "   nginx 校验通过并已 reload";
   else echo "   ✗ nginx -t 失败，回滚到 $BAK"; cp "$BAK" "$NGINX_CONF"; nginx -t && systemctl reload nginx; echo "   已回滚，Anker 等完全不受影响"; exit 1; fi
 fi
 
 echo "==> [7/7] 完成"
 echo "-----------------------------------------------"
-echo "  司南已上线："
-echo "    http://47.119.112.225/sinan/          （自动进入应用）"
-echo "    http://47.119.112.225/sinan/app/healthz"
+echo "  明辨已上线："
+echo "    http://47.119.112.225/mingbian/"
+echo "    http://47.119.112.225/mingbian/api/health"
+echo "    http://47.119.112.225/mingbian/ledger   （InfiniSynapse 调用台账）"
 echo ""
 echo "  Anker 不受影响，验证："
 echo "    systemctl is-active nginx $SVC"
 echo "    curl -s -o /dev/null -w 'anker: %{http_code}\\n' http://47.119.112.225/anker/app/"
 echo "-----------------------------------------------"
 echo "  下一步（强烈建议）：用真实 API 生成示例数据+真实 taskId："
-echo "    cd $DIR && ./.venv/bin/python seed_demos.py"
+echo "    cd $DIR && ./.venv/bin/python scripts/seed_demos.py"
 echo "-----------------------------------------------"

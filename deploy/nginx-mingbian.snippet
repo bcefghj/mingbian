@@ -1,0 +1,25 @@
+    # ---- 项目三：明辨 MINGBIAN (由 deploy.sh 自动插入) ----
+    location = /mingbian { return 301 /mingbian/; }
+    location /mingbian/ {
+        proxy_pass http://127.0.0.1:8767/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # 后端不知道自己挂在子路径下，靠这个头把前缀补回重定向里
+        proxy_set_header X-Forwarded-Prefix /mingbian;
+        # SSE：专家档一次研判可能跑二十分钟，且必须逐条下发不能缓冲
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding off;
+        proxy_read_timeout 1800s;
+        proxy_send_timeout 1800s;
+    }
+
+    # 旧域名路径不烂：/sinan/app/report.html?id=x -> /mingbian/report/x
+    location = /sinan { return 301 /mingbian/; }
+    location /sinan/ {
+        rewrite ^/sinan/app/(.*)$ /mingbian/$1 redirect;
+        rewrite ^/sinan/?(.*)$    /mingbian/$1 redirect;
+    }
+

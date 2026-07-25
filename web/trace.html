@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>决策回放 · 明辨 MINGBIAN</title>
+<script>
+(function () {
+  var b = location.pathname.replace(/(report|trace|graph)\/[^/]*$/, '')
+    .replace(/(dashboard|experts|ledger|bench|about)\/?$/, '');
+  if (b.slice(-1) !== '/') b += '/';
+  document.write('<base href="' + b + '">');
+})();
+</script>
+<link rel="icon" href="./static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./static/mb.css">
+<style>
+  .replay { display: grid; grid-template-columns: 320px minmax(0,1fr); gap: 14px; align-items: start; }
+  @media (max-width: 900px) { .replay { grid-template-columns: 1fr; } }
+  .spanrow {
+    display: flex; gap: 10px; padding: 9px 10px; border-radius: 6px; cursor: pointer;
+    border-left: 2px solid transparent; transition: all 120ms;
+  }
+  .spanrow:hover { background: var(--s2); }
+  .spanrow.on { background: var(--s2); border-left-color: var(--accent); }
+  .spanrow .seq { font-family: var(--mono); color: var(--t4); font-size: 11px; min-width: 22px; }
+</style>
+</head>
+<body>
+<header id="topbar"></header>
+<div class="wrap-wide" style="padding-top:24px">
+  <div class="page-head" style="padding-top:0">
+    <h1>决策回放</h1>
+    <p>按顺序重走一遍这次研判：每一步是谁在做、用了什么模型、当时看到了哪些证据、做出了什么判断。
+      黑箱里的每一格都摊在这里。</p>
+    <div class="row wrapflex mt12" style="gap:7px" id="head"></div>
+  </div>
+
+  <div class="replay">
+    <div class="card card-tight">
+      <div class="card-title row-between"><span>调用序列</span><span class="t4" id="spanCount"></span></div>
+      <div id="spans" class="col" style="gap:1px;max-height:70vh;overflow-y:auto"></div>
+      <div class="row mt12" style="gap:6px">
+        <button class="btn btn-sm" id="prev">上一步</button>
+        <button class="btn btn-sm" id="play">自动播放</button>
+        <button class="btn btn-sm" id="next">下一步</button>
+      </div>
+    </div>
+    <div class="col" style="gap:14px">
+      <div class="card" id="detail"><div class="empty">选择左侧任意一步查看细节。</div></div>
+      <div class="card" id="alertCard" style="display:none"></div>
+      <div class="card">
+        <div class="card-title">运行计数器</div>
+        <div id="counters" class="grid grid-3"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<footer id="footer"></footer>
+
+<script src="./static/mb-core.js"></script>
+<script src="./static/mb-report.js"></script>
+<script>
+(function () {
+  const { $, el, esc, getJSON, fmtDur, fmtTime } = MB;
+  MB.mountTopbar('研判台');
+  MB.mountFooter();
+
+  const rid = location.pathname.split('/').filter(Boolean).pop();
+  let spans = [], evMap = {}, cur = -1, timer = null;
+
+  const STAGE_CN = { intake: '意图', plan: '计划', collect: '博学', verify: '审问',
+    analyze: '慎思', audit: '质检', deliver: '笃行' };
+
+  getJSON('./api/report/' + rid).then(r => {
+    (r.evidence || []).forEach(e => { evMap[e.ev_id] = e; });
+    const t = r.trace || {};
+    spans = t.spans || [];
+    $('#head').innerHTML =
+      `<span class="tag">${esc(r.question || '')}</span>` +
+      `<span class="tag tag-accent">${spans.length} 步</span>` +
+      `<span class="tag">${esc(fmtDur(r.elapsed_ms))}</span>` +
+      `<a class="tag tag-ok" href="./report/${esc(rid)}">回到报告 →</a>`;
+    $('#spanCount').textContent = spans.length;
+    $('#spans').innerHTML = spans.map((s, i) =>
+      `<div class="spanrow" data-i="${i}">` +
+      `<span class="seq">${s.seq}</span>` +
+      `<span class="grow"><span class="fs12 t2">${esc(s.agent_id)}</span>` +
+      `<div class="t4 fs11">${esc(STAGE_CN[s.stage] || s.stage)} · ${esc(s.purpose)}</div></span>` +
+      `<span class="t4 fs11 mono nowrap">${s.latency_ms ? (s.latency_ms / 1000).toFixed(1) + 's' : ''}</span>` +
+      `</div>`).join('') || '<div class="empty">这份报告没有 Trace 记录（可能是预置案例）。</div>';
+
+    MB.$$('#spans .spanrow').forEach(n =>
+      n.addEventListener('click', () => show(Number(n.dataset.i))));
+
+    const c = t.counters || {};
+    const keys = Object.keys(c);
+    $('#counters').innerHTML = keys.length ? keys.map(k =>
+      `<div class="inset"><div class="t4 fs11">${esc(k)}</div>` +
+      `<div class="mono t1 fs16 mt4">${c[k]}</div></div>`).join('')
+      : `<div class="t4 fs12">本次运行没有触发任何异常计数。</div>`;
+
+    if ((t.alerts || []).length) {
+      $('#alertCard').style.display = '';
+      $('#alertCard').innerHTML = `<div class="card-title">观测告警</div>` +
+        t.alerts.map(a => `<div class="inset mt8" style="border-left:2px solid var(--warn)">` +
+          `<b class="t2 fs13 mono">${esc(a.code)}</b>` +
+          `<div class="t3 fs12 mt4">触发 ${a.count} 次，阈值 ${a.limit}</div></div>`).join('');
+    }
+    if (spans.length) show(0);
+  }).catch(() => {
+    $('#detail').innerHTML = '<div class="empty">读取失败，这份报告可能不存在。</div>';
+  });
+
+  function show(i) {
+    if (i < 0 || i >= spans.length) return;
+    cur = i;
+    MB.$$('#spans .spanrow').forEach(n => n.classList.toggle('on', Number(n.dataset.i) === i));
+    const s = spans[i];
+    const evs = (s.evidence_ids || []).map(id => evMap[id]).filter(Boolean);
+    $('#detail').innerHTML =
+      `<div class="row-between mb12"><div>` +
+      `<div class="t4 fs11">第 ${s.seq} 步 / 共 ${spans.length} 步</div>` +
+      `<div class="fs20 t1">${esc(s.agent_id)}</div></div>` +
+      `<span class="tag tag-accent">${esc(STAGE_CN[s.stage] || s.stage)}</span></div>` +
+      `<div class="inset"><div class="t4 fs11">这一步在做什么</div>` +
+      `<div class="t2 fs13 mt4">${esc(s.purpose)}</div></div>` +
+      `<div class="inset mt8"><div class="t4 fs11">做出了什么判断</div>` +
+      `<div class="t2 fs13 mt4">${esc(s.decision || '（无记录）')}</div></div>` +
+      `<div class="grid grid-4 mt12">` +
+      `<div><div class="t4 fs11">模型</div><div class="mono t2 fs12 mt4">${esc(s.model || '—')}</div></div>` +
+      `<div><div class="t4 fs11">耗时</div><div class="mono t2 fs12 mt4">${s.latency_ms || 0} ms</div></div>` +
+      `<div><div class="t4 fs11">输入字数</div><div class="mono t2 fs12 mt4">${s.prompt_chars || 0}</div></div>` +
+      `<div><div class="t4 fs11">输出字数</div><div class="mono t2 fs12 mt4">${s.output_chars || 0}</div></div>` +
+      `</div>` +
+      (evs.length ? `<div class="mt16"><div class="t4 fs11 mb8">这一步当时看到的证据</div>` +
+        evs.map(e => `<div class="inset mt8"><div class="row-between">` +
+          `<span class="mono fs11 t3">${esc(e.domain || '本地')}</span>` +
+          `<span class="tag">${e.credibility}</span></div>` +
+          `<div class="fs12 t2 mt4">${esc((e.title || '').slice(0, 60))}</div>` +
+          `<div class="fs12 t4 mt4">${esc((e.excerpt || '').slice(0, 140))}</div></div>`).join('') +
+        `</div>` : '');
+  }
+
+  $('#prev').addEventListener('click', () => show(cur - 1));
+  $('#next').addEventListener('click', () => show(cur + 1));
+  $('#play').addEventListener('click', () => {
+    if (timer) { clearInterval(timer); timer = null; $('#play').textContent = '自动播放'; return; }
+    $('#play').textContent = '暂停';
+    timer = setInterval(() => {
+      if (cur + 1 >= spans.length) { clearInterval(timer); timer = null; $('#play').textContent = '自动播放'; return; }
+      show(cur + 1);
+    }, 1100);
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'j') { show(cur + 1); e.preventDefault(); }
+    if (e.key === 'ArrowUp' || e.key === 'k') { show(cur - 1); e.preventDefault(); }
+  });
+})();
+</script>
+</body>
+</html>

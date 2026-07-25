@@ -5,3 +5,5 @@ __pycache__/
 reports/*.json
 !reports/.gitkeep
 .DS_Store
+reports/_runs/
+reports/ledger.jsonl

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InfiniSynapse 调用台账 · 明辨 MINGBIAN</title>
+<script>
+(function () {
+  var b = location.pathname.replace(/(report|trace|graph)\/[^/]*$/, '')
+    .replace(/(dashboard|experts|ledger|bench|about)\/?$/, '');
+  if (b.slice(-1) !== '/') b += '/';
+  document.write('<base href="' + b + '">');
+})();
+</script>
+<link rel="icon" href="./static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./static/mb.css">
+</head>
+<body>
+<header id="topbar"></header>
+<div class="wrap-wide" style="padding-top:24px">
+  <div class="page-head" style="padding-top:0">
+    <h1>InfiniSynapse 调用台账</h1>
+    <p>比赛的前置准入条件要求「后端通过 Server API 调用 InfiniSynapse，且调用日志可在平台后台查验」。
+      这一页把每次真实调用的 taskId、模型与时间摆出来，可以逐条对照后台核验。</p>
+  </div>
+
+  <div class="card mb16" id="engineCard">
+    <div class="row wrapflex" style="gap:16px">
+      <div class="skel w40"></div>
+    </div>
+  </div>
+
+  <div class="grid grid-4" id="stats"></div>
+
+  <section class="mt28">
+    <div class="row-between mb12"><h2 class="fs20">调用记录</h2>
+      <span class="t4 fs12">点 taskId 可复制</span></div>
+    <div class="card"><div style="overflow-x:auto"><table class="tbl">
+      <thead><tr><th>时间</th><th>taskId</th><th>模型</th><th>问题</th><th>档位</th>
+        <th class="num">耗时</th><th></th></tr></thead>
+      <tbody id="rows"><tr><td colspan="7"><div class="skel w60"></div></td></tr></tbody>
+    </table></div></div>
+  </section>
+
+  <section class="mt28">
+    <div class="card">
+      <div class="card-title">调用链路</div>
+      <div class="t3 fs13" style="line-height:1.9">
+        每次研判后端都按官方要求的顺序走完整条链路，顺序不能颠倒：
+      </div>
+      <ol class="t3 fs13 mt12" style="padding-left:20px;line-height:1.9">
+        <li>先建 SSE 长连接 <code>GET /api/ai/events?connId=</code>，否则会丢掉开头的事件</li>
+        <li>开联网检索 <code>autoApprovalSettings.enableWebSearch</code></li>
+        <li>建任务 <code>POST /api/ai/message</code> 带 <code>newTask</code></li>
+        <li>拿到 taskId 立刻 <code>POST /api/ai/settings</code> <b class="t1">显式锁定 deepseek-v4-pro</b>，不依赖账户默认值</li>
+        <li>SSE 流式 + <code>GET /api/ai_task/tasks</code> 轮询双保险取回结果</li>
+        <li><code>POST /api/ai_task/setShare</code> 生成平台公开链接，便于第三方核验</li>
+      </ol>
+      <div class="t4 fs12 mt12">
+        若 InfiniSynapse 通道异常，系统会降级到备用引擎，并在界面上明确标注「已降级」——
+        不声不响地换引擎，对核验和用户信任都是不诚实的。降级的调用不会计入本页 Infini 统计。
+      </div>
+    </div>
+  </section>
+</div>
+<footer id="footer"></footer>
+
+<script src="./static/mb-core.js"></script>
+<script>
+(function () {
+  const { $, esc, getJSON, fmtTime, copy, fmtDur } = MB;
+  MB.mountTopbar('调用台账');
+  MB.mountFooter();
+
+  getJSON('./api/engine').then(e => {
+    const ok = !!e.ok;
+    $('#engineCard').innerHTML =
+      `<div class="row wrapflex" style="gap:20px">` +
+      `<span class="engine-badge"><span class="dot ${ok ? '' : 'off'}"></span>` +
+      `<span>${ok ? '引擎在线' : '引擎不可达'}</span></span>` +
+      `<div><div class="t4 fs11">服务地址</div><div class="mono fs12 t2 mt4">${esc(e.base || '')}</div></div>` +
+      `<div><div class="t4 fs11">锁定模型</div><div class="mono fs12 t1 mt4">${esc(e.model || 'deepseek-v4-pro')}</div></div>` +
+      `<div><div class="t4 fs11">账户当前配置</div><div class="mono fs12 t2 mt4">${esc(e.configured_model || '未读取到')}</div></div>` +
+      (e.search ? `<div><div class="t4 fs11">检索通道</div>` +
+        `<div class="fs12 mt4"><span class="tag ${e.search.configured ? 'tag-ok' : 'tag-warn'}">` +
+        `${esc(e.search.label)}</span></div>` +
+        `<div class="t4 fs11 mt4">${esc(e.search.note || '')}</div></div>` : '') +
+      (ok ? '' : `<div class="t3 fs12">${esc(e.reason || '')}</div>`) +
+      `</div>`;
+  }).catch(() => { $('#engineCard').innerHTML = '<div class="t4 fs12">引擎状态读取失败。</div>'; });
+
+  getJSON('./api/ledger').then(d => {
+    const s = d.stats || {}, rows = d.rows || [];
+    $('#stats').innerHTML = [
+      ['总调用次数', s.total_calls || 0, '含深化与质检'],
+      ['带 taskId 的调用', s.with_task_id || 0, '可在平台后台查验'],
+      ['平均耗时', ((s.avg_elapsed_ms || 0) / 1000).toFixed(1) + 's', '端到端'],
+      ['使用模型', (s.models || []).length, (s.models || []).join('、') || '—'],
+    ].map(([k, v, dsc]) =>
+      `<div class="card"><div class="stat"><span class="v">${esc(String(v))}</span>` +
+      `<span class="k">${esc(k)}</span><span class="d">${esc(dsc)}</span></div></div>`).join('');
+
+    $('#rows').innerHTML = rows.length ? rows.map(r =>
+      `<tr><td class="t4 fs12 nowrap">${esc(fmtTime(r.ts))}</td>` +
+      `<td><span class="mono fs11 t2 click" data-copy="${esc(r.taskId || '')}">${esc(r.taskId || '—')}</span></td>` +
+      `<td class="mono fs12 t3">${esc(r.model || '')}</td>` +
+      `<td class="fs12">${r.report_id ? `<a href="./report/${esc(r.report_id)}">${esc((r.question || '').slice(0, 34))}</a>`
+        : esc((r.question || '').slice(0, 34))}</td>` +
+      `<td><span class="tag">${esc(r.mode || '')}</span></td>` +
+      `<td class="num t3 fs12">${esc(fmtDur(r.elapsed_ms))}</td>` +
+      `<td>${r.share_url ? `<a class="fs12" href="${esc(r.share_url)}" target="_blank" rel="noopener">公开链接 ↗</a>` : ''}</td>` +
+      `</tr>`).join('')
+      : `<tr><td colspan="7"><div class="t4 fs12">还没有调用记录。回到研判台跑一次，这里就会写入真实 taskId。</div></td></tr>`;
+
+    MB.$$('[data-copy]').forEach(n => n.addEventListener('click', () => {
+      if (n.dataset.copy) copy(n.dataset.copy);
+    }));
+  }).catch(() => { });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>指标仪表盘 · 明辨 MINGBIAN</title>
+<script>
+(function () {
+  var b = location.pathname.replace(/(report|trace|graph)\/[^/]*$/, '')
+    .replace(/(dashboard|experts|ledger|bench|about)\/?$/, '');
+  if (b.slice(-1) !== '/') b += '/';
+  document.write('<base href="' + b + '">');
+})();
+</script>
+<link rel="icon" href="./static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./static/mb.css">
+</head>
+<body>
+<header id="topbar"></header>
+<div class="wrap-wide" style="padding-top:24px">
+  <div class="page-head" style="padding-top:0">
+    <h1>指标仪表盘</h1>
+    <p>每个指标都写明了算法。不公开口径的「效率提升 10 倍」是营销数字，不是工程指标——
+      所以这里每一格都能点开看它是怎么算的，以及它<b class="t2">不能</b>说明什么。</p>
+  </div>
+
+  <div class="grid grid-4" id="top"></div>
+
+  <section class="mt28">
+    <div class="row-between mb12"><h2 class="fs20">指标口径</h2>
+      <span class="t4 fs12">这一节就是我们的「说明书」</span></div>
+    <div class="grid grid-2" id="defs"></div>
+  </section>
+
+  <section class="mt28">
+    <div class="row-between mb12"><h2 class="fs20">最近研判</h2>
+      <a class="t3 fs13" href="./">提个新问题 →</a></div>
+    <div class="card"><div style="overflow-x:auto"><table class="tbl" id="tbl">
+      <thead><tr><th>问题</th><th>模型</th><th>taskId</th><th>时间</th><th></th></tr></thead>
+      <tbody id="rows"><tr><td colspan="5"><div class="skel w60"></div></td></tr></tbody>
+    </table></div></div>
+  </section>
+
+  <section class="mt28">
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-title">人工复核</div>
+        <div id="reviews"></div>
+        <div class="t4 fs11 mt12">用户在报告里对每条论点投的票。人工修正率越低，说明机器判断越靠得住。</div>
+      </div>
+      <div class="card">
+        <div class="card-title">观测告警</div>
+        <div id="alerts"></div>
+      </div>
+    </div>
+  </section>
+</div>
+<footer id="footer"></footer>
+
+<script src="./static/mb-core.js"></script>
+<script>
+(function () {
+  const { $, esc, getJSON, fmtTime } = MB;
+  MB.mountTopbar('指标');
+  MB.mountFooter();
+
+  getJSON('./api/dashboard').then(d => {
+    const l = d.ledger || {}, rv = d.reviews || {};
+    $('#top').innerHTML = [
+      ['累计研判', d.reports || 0, '份报告已落库'],
+      ['Infini 调用', l.infini_calls || 0, '每次都带真实 taskId'],
+      ['平均耗时', ((l.avg_elapsed_ms || 0) / 1000).toFixed(1) + 's', '含取证与返工'],
+      ['人工复核', rv.reviewed || 0, `${rv.confirmed || 0} 已核实 / ${rv.doubted || 0} 存疑 / ${rv.rejected || 0} 驳回`],
+    ].map(([k, v, dsc]) =>
+      `<div class="card"><div class="stat"><span class="v">${esc(String(v))}</span>` +
+      `<span class="k">${esc(k)}</span><span class="d">${esc(dsc)}</span></div></div>`).join('');
+
+    const defs = d.definitions || {};
+    $('#defs').innerHTML = Object.keys(defs).map(k => {
+      const x = defs[k];
+      return `<div class="card"><div class="t1 fs16">${esc(x.name)}</div>` +
+        `<div class="inset mt12"><div class="t4 fs11">算法</div>` +
+        `<div class="mono fs12 t2 mt4">${esc(x.formula)}</div></div>` +
+        `<div class="t3 fs12 mt12">${esc(x.why)}</div></div>`;
+    }).join('');
+
+    const rvTotal = rv.reviewed || 0;
+    const bad = (rv.doubted || 0) + (rv.rejected || 0);
+    $('#reviews').innerHTML = rvTotal
+      ? `<div class="stat"><span class="v">${Math.round(bad / rvTotal * 100)}%</span>` +
+        `<span class="k">人工修正率</span>` +
+        `<span class="d">${bad} 条被标存疑或驳回 / 共 ${rvTotal} 条已复核</span></div>`
+      : `<div class="t4 fs12">还没有人工复核记录。打开任意报告，在论点卡上投一票即可。</div>`;
+  }).catch(() => { });
+
+  getJSON('./api/reports').then(d => {
+    const rows = d.reports || [];
+    $('#rows').innerHTML = rows.length ? rows.map(r =>
+      `<tr><td><a href="./report/${esc(r.id)}">${esc((r.question || '').slice(0, 44))}</a></td>` +
+      `<td class="mono fs12 t3">${esc(r.model || r.engine || '—')}</td>` +
+      `<td class="mono fs11 t4">${esc((r.taskId || '—').slice(0, 16))}</td>` +
+      `<td class="t4 fs12 nowrap">${esc(fmtTime(r.created_at))}</td>` +
+      `<td><a class="fs12" href="./trace/${esc(r.id)}">回放</a></td></tr>`).join('')
+      : `<tr><td colspan="5"><div class="t4 fs12">还没有研判记录。</div></td></tr>`;
+  }).catch(() => { });
+
+  getJSON('./api/alerts').then(d => {
+    const a = d.alerts || [], rules = d.rules || {};
+    $('#alerts').innerHTML =
+      (a.length ? a.slice(0, 6).map(x =>
+        `<div class="inset mt8" style="border-left:2px solid var(--warn)">` +
+        `<b class="mono fs12 t2">${esc(x.code)}</b>` +
+        `<div class="t4 fs11 mt4">触发 ${x.count} 次（阈值 ${x.limit}）· ${fmtTime(x.ts)}</div></div>`).join('')
+        : `<div class="t3 fs12">当前无告警。</div>`) +
+      `<div class="t4 fs11 mt12">监控规则：` +
+      Object.keys(rules).map(k => `${k} > ${rules[k]}`).join('、') + `</div>`;
+  }).catch(() => { });
+})();
+</script>
+</body>
+</html>

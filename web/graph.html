@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>实体工作区 · 明辨 MINGBIAN</title>
+<script>
+(function () {
+  var b = location.pathname.replace(/(report|trace|graph)\/[^/]*$/, '')
+    .replace(/(dashboard|experts|ledger|bench|about)\/?$/, '');
+  if (b.slice(-1) !== '/') b += '/';
+  document.write('<base href="' + b + '">');
+})();
+</script>
+<link rel="icon" href="./static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./static/mb.css">
+<style>
+  .ws { display: grid; grid-template-columns: 210px minmax(0,1fr) 340px; gap: 14px; align-items: start; }
+  @media (max-width: 1100px) { .ws { grid-template-columns: 1fr; } }
+  #cv { width: 100%; height: 520px; display: block; border-radius: var(--radius); background: var(--s3); }
+  .ent-item {
+    display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 5px;
+    cursor: pointer; font-size: 12.5px; color: var(--t3); transition: all 120ms;
+  }
+  .ent-item:hover { background: var(--s2); color: var(--t1); }
+  .ent-item.on { background: var(--accent-dim); color: var(--t1); }
+  .ent-item .n { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--t4); }
+</style>
+</head>
+<body>
+<header id="topbar"></header>
+<div class="wrap-wide" style="padding-top:24px">
+  <div class="page-head" style="padding-top:0">
+    <h1>实体工作区</h1>
+    <p>点任何一个实体，右侧立刻变成它的档案：它出现在哪些证据里、和谁有关系、支撑了哪些论点。
+      研判到最后往往不是「这个说法对不对」，而是「这个人／这家机构到底是谁」。</p>
+    <div class="row wrapflex mt12" style="gap:7px" id="head"></div>
+  </div>
+
+  <div class="ws">
+    <div class="card card-tight">
+      <div class="card-title row-between"><span>实体</span><span class="t4" id="entCount"></span></div>
+      <input class="field" id="filter" placeholder="筛选…" style="font-size:12.5px;padding:7px 10px;margin-bottom:8px">
+      <div id="entList" class="col" style="gap:1px;max-height:60vh;overflow-y:auto"></div>
+    </div>
+
+    <div class="card card-tight">
+      <div class="card-title row-between"><span>关联图</span>
+        <span class="t4" style="text-transform:none;letter-spacing:0">拖动节点可调整布局</span></div>
+      <svg id="cv"></svg>
+      <div class="row wrapflex mt8" style="gap:12px">
+        <span class="t4 fs11"><span style="color:var(--accent)">●</span> 机构</span>
+        <span class="t4 fs11"><span style="color:var(--purple)">●</span> 人物</span>
+        <span class="t4 fs11"><span style="color:var(--ok)">●</span> 指标 / 产品</span>
+        <span class="t4 fs11">实线 = 声明关系，虚线 = 同证据共现</span>
+      </div>
+    </div>
+
+    <div class="card card-tight" id="panel">
+      <div class="empty">选一个实体看它的档案。</div>
+    </div>
+  </div>
+
+  <div class="card mt16" id="cliqueCard" style="display:none"></div>
+</div>
+<footer id="footer"></footer>
+
+<script src="./static/mb-core.js"></script>
+<script>
+(function () {
+  const { $, el, esc, getJSON } = MB;
+  MB.mountTopbar('研判台');
+  MB.mountFooter();
+
+  const rid = location.pathname.split('/').filter(Boolean).pop();
+  let nodes = [], edges = [], evMap = {}, claims = [], selected = null;
+
+  const COLOR = { 机构: '#5b9cf8', 人物: '#a583f0', 产品: '#47b881', 指标: '#47b881',
+    地区: '#e0a33e', 账号: '#e0645f', 其他: '#6b7280' };
+
+  getJSON('./api/report/' + rid).then(r => {
+    const g = r.graph || {};
+    nodes = (g.nodes || []).map(n => Object.assign({}, n, {
+      x: Math.random() * 600 + 100, y: Math.random() * 380 + 60, vx: 0, vy: 0,
+    }));
+    edges = g.edges || [];
+    claims = r.claims || [];
+    (r.evidence || []).forEach(e => { evMap[e.ev_id] = e; });
+
+    $('#head').innerHTML =
+      `<span class="tag">${esc(r.question || '')}</span>` +
+      `<span class="tag tag-accent">${nodes.length} 个实体</span>` +
+      `<span class="tag">${edges.length} 条关联</span>` +
+      `<a class="tag tag-ok" href="./report/${esc(rid)}">回到报告 →</a>`;
+    $('#entCount').textContent = nodes.length;
+
+    if (!nodes.length) {
+      $('#entList').innerHTML = '<div class="t4 fs12">本次研判没有抽取到实体。</div>';
+      document.getElementById('cv').style.display = 'none';
+      return;
+    }
+    renderList('');
+    simulate();
+
+    if ((g.cliques || []).length) {
+      $('#cliqueCard').style.display = '';
+      $('#cliqueCard').innerHTML = `<div class="card-title">一致性团伙</div>` +
+        `<div class="t4 fs12 mb12">「十家媒体都这么说」经常是「一家在说、九家在转」。` +
+        `下面这些证据文本高度雷同，独立性应当打折。</div>` +
+        g.cliques.map(c => `<div class="inset mt8" style="border-left:2px solid var(--warn)">` +
+          `<div class="t2 fs13">${esc(c.note)}</div>` +
+          `<div class="row wrapflex mt8" style="gap:5px">` +
+          c.members.map(m => `<span class="tag mono">${esc(m.domain || m.ev_id)}</span>`).join('') +
+          `</div></div>`).join('');
+    }
+  }).catch(() => {
+    $('#panel').innerHTML = '<div class="empty">读取失败。</div>';
+  });
+
+  function renderList(q) {
+    const list = nodes.filter(n => !q || n.name.toLowerCase().includes(q.toLowerCase()));
+    $('#entList').innerHTML = list.map(n =>
+      `<div class="ent-item ${selected === n.key ? 'on' : ''}" data-k="${esc(n.key)}">` +
+      `<span style="color:${COLOR[n.type] || COLOR.其他}">●</span>` +
+      `<span class="grow" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n.name)}</span>` +
+      `<span class="n">${(n.evidence_ids || []).length}</span></div>`).join('')
+      || '<div class="t4 fs12">没有匹配的实体。</div>';
+    MB.$$('#entList .ent-item').forEach(x =>
+      x.addEventListener('click', () => select(x.dataset.k)));
+  }
+
+  $('#filter').addEventListener('input', e => renderList(e.target.value.trim()));
+
+  function select(key) {
+    selected = key;
+    renderList($('#filter').value.trim());
+    draw();
+    const n = nodes.find(x => x.key === key);
+    if (!n) return;
+    const evs = (n.evidence_ids || []).map(id => evMap[id]).filter(Boolean)
+      .sort((a, b) => (b.credibility || 0) - (a.credibility || 0));
+    const rel = edges.filter(e => e.from === key || e.to === key).map(e => {
+      const other = nodes.find(x => x.key === (e.from === key ? e.to : e.from));
+      return { name: other ? other.name : '?', label: e.label, kind: e.kind };
+    });
+    const cls = claims.filter(c => (n.claim_ids || []).includes(c.claim_id));
+    const timeline = evs.filter(e => e.published_at)
+      .sort((a, b) => String(a.published_at).localeCompare(String(b.published_at)));
+
+    $('#panel').innerHTML =
+      `<div class="row-between"><div><div class="fs16 t1">${esc(n.name)}</div>` +
+      `<div class="t4 fs11 mt4">${esc(n.type)}${n.aliases.length ? ' · 别名 ' + esc(n.aliases.join('、')) : ''}</div></div>` +
+      `<span class="tag" style="color:${COLOR[n.type] || COLOR.其他}">${(n.evidence_ids || []).length} 证据</span></div>` +
+      (n.note ? `<div class="inset mt12 fs12 t3">${esc(n.note)}</div>` : '') +
+
+      (rel.length ? `<div class="card-title mt16">关联对象</div>` +
+        rel.map(x => `<div class="row fs12 t3" style="gap:6px;padding:4px 0">` +
+          `<span class="tag ${x.kind === 'declared' ? 'tag-accent' : ''}">${esc(x.label || '相关')}</span>` +
+          `<span class="grow">${esc(x.name)}</span></div>`).join('') : '') +
+
+      (cls.length ? `<div class="card-title mt16">支撑的论点</div>` +
+        cls.map(c => `<div class="inset mt8 fs12 t3">${esc(c.text.slice(0, 90))}` +
+          `<div class="t4 fs11 mt4">${esc(c.strength_label)} · ${c.independent_domains} 个独立域名</div></div>`).join('') : '') +
+
+      (timeline.length ? `<div class="card-title mt16">时间线</div>` +
+        timeline.map(e => `<div class="row fs12" style="gap:8px;padding:5px 0;border-bottom:1px solid var(--line-soft)">` +
+          `<span class="mono t4 fs11 nowrap">${esc(e.published_at)}</span>` +
+          `<span class="grow t3">${esc((e.title || '').slice(0, 40))}</span></div>`).join('') : '') +
+
+      (evs.length ? `<div class="card-title mt16">全部证据</div>` +
+        evs.map(e => `<div class="inset mt8"><div class="row-between">` +
+          `<span class="mono fs11 t3">${esc(e.domain || '本地')}</span>` +
+          `<span class="tag">${e.credibility}</span></div>` +
+          `<div class="fs12 t2 mt4">${esc((e.title || '').slice(0, 50))}</div>` +
+          (e.url ? `<a class="fs11 mt4" style="display:inline-block" href="${esc(e.url)}" target="_blank" rel="noopener">原文 →</a>` : '') +
+          `</div>`).join('') : `<div class="empty mt16">这个实体还没有绑定证据。</div>`);
+  }
+
+  /* ---------------- 极简力导向布局（不引外部依赖，服务器无需连 CDN） ---------------- */
+
+  const svg = document.getElementById('cv');
+  let W = 800, H = 520, drag = null;
+
+  function simulate() {
+    const rect = svg.getBoundingClientRect();
+    W = rect.width || 800; H = 520;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    let ticks = 0;
+    const step = () => {
+      for (let k = 0; k < 2; k++) tick();
+      draw();
+      if (++ticks < 220 && !drag) requestAnimationFrame(step);
+    };
+    step();
+
+    svg.addEventListener('mousedown', e => {
+      const p = pos(e);
+      const hit = nodes.find(n => Math.hypot(n.x - p.x, n.y - p.y) < 16);
+      if (hit) { drag = hit; select(hit.key); }
+    });
+    svg.addEventListener('mousemove', e => {
+      if (!drag) return;
+      const p = pos(e); drag.x = p.x; drag.y = p.y; drag.vx = drag.vy = 0; draw();
+    });
+    window.addEventListener('mouseup', () => { drag = null; });
+  }
+
+  function pos(e) {
+    const r = svg.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * (W / r.width), y: (e.clientY - r.top) * (H / r.height) };
+  }
+
+  function tick() {
+    // 斥力
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let d2 = dx * dx + dy * dy || 1;
+        const f = 2600 / d2;
+        const d = Math.sqrt(d2);
+        const fx = (dx / d) * f, fy = (dy / d) * f;
+        a.vx -= fx; a.vy -= fy; b.vx += fx; b.vy += fy;
+      }
+    }
+    // 引力（边）
+    edges.forEach(e => {
+      const a = nodes.find(n => n.key === e.from), b = nodes.find(n => n.key === e.to);
+      if (!a || !b) return;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const f = (d - 120) * 0.012;
+      const fx = (dx / d) * f, fy = (dy / d) * f;
+      a.vx += fx; a.vy += fy; b.vx -= fx; b.vy -= fy;
+    });
+    // 向心 + 阻尼
+    nodes.forEach(n => {
+      n.vx += (W / 2 - n.x) * 0.004;
+      n.vy += (H / 2 - n.y) * 0.006;
+      n.vx *= 0.82; n.vy *= 0.82;
+      n.x = Math.max(28, Math.min(W - 28, n.x + n.vx));
+      n.y = Math.max(24, Math.min(H - 24, n.y + n.vy));
+    });
+  }
+
+  function draw() {
+    const lines = edges.map(e => {
+      const a = nodes.find(n => n.key === e.from), b = nodes.find(n => n.key === e.to);
+      if (!a || !b) return '';
+      const lit = selected && (e.from === selected || e.to === selected);
+      return `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" ` +
+        `stroke="${lit ? '#5b9cf8' : '#242832'}" stroke-width="${lit ? 1.6 : 1}" ` +
+        `${e.kind === 'cooccur' ? 'stroke-dasharray="3 3"' : ''} />`;
+    }).join('');
+
+    const circles = nodes.map(n => {
+      const r = Math.min(19, 7 + (n.evidence_ids || []).length * 2.2);
+      const on = selected === n.key;
+      const c = COLOR[n.type] || COLOR.其他;
+      return `<g>` +
+        `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${c}" fill-opacity="${on ? .95 : .55}" ` +
+        `stroke="${on ? '#e9edf3' : c}" stroke-width="${on ? 2 : 1}" style="cursor:pointer"/>` +
+        `<text x="${n.x}" y="${n.y + r + 13}" text-anchor="middle" ` +
+        `fill="${on ? '#e9edf3' : 'rgba(233,237,243,.62)'}" font-size="11" ` +
+        `font-family="-apple-system,PingFang SC,sans-serif">${esc(n.name.slice(0, 9))}</text></g>`;
+    }).join('');
+
+    svg.innerHTML = lines + circles;
+  }
+})();
+</script>
+</body>
+</html>

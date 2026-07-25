@@ -1,363 +1,252 @@
-# 司南 SINAN · 多智能体证据研判引擎
+# 明辨 MINGBIAN · 多智能体证据研判引擎
 
-> 派一支**专家评审团**，为你多源取证、**无证据不立论**，把纷杂信息研判成**一个可信的方向**。  
-> InfiniSynapse × CSDN「Vibe Coding」泛数据分析应用开发大赛 · 参赛作品。
+> 你问一个需要下判断的问题，它派一支专家团联网取证、交叉验证、自我质检，
+> 最后给你一份**每句话都能点开看出处**的研判报告。
+>
+> InfiniSynapse × CSDN「Vibe Coding」泛数据分析应用开发大赛 · 参赛作品
 
-**在线 Demo：** [http://47.119.112.225/sinan/](http://47.119.112.225/sinan/)  
-**代码仓库：** [https://github.com/bcefghj/sinan](https://github.com/bcefghj/sinan)  
-**健康检查：** [http://47.119.112.225/sinan/app/healthz](http://47.119.112.225/sinan/app/healthz)
-
----
-
-## 一句话介绍
-
-**司南**（取名于中国古代第一个指南针）是一个**证据驱动的多智能体研判引擎**。  
-你提出一个需要判断的问题——市场概率、职场尽调、打假反诈——司南通过 **InfiniSynapse 官方 Server API** 动态派遣专家团联网取证，坚持「无证据不立论」，抽取实体与隐藏关联，最终产出带**专家团卡片 · 置信度仪表 · 概率场景 · 证据表 · 关联图谱**的可视化报告；可分享、可批注深化、可在 InfiniSynapse 后台用 `taskId` 核验。
+**在线体验：** http://47.119.112.225/mingbian/
+**代码仓库：** https://github.com/bcefghj/mingbian
+**健康检查：** http://47.119.112.225/mingbian/api/health
+**调用台账：** http://47.119.112.225/mingbian/ledger （每次 InfiniSynapse 调用的 taskId 可核验）
 
 ---
 
-## 它解决什么问题
+## 名字的来历
 
-| 痛点 | 司南怎么做 |
-|------|-----------|
-| 网络噪音多、观点互相打架 | 只看可核验证据，不看情绪化观点 |
-| 结论空口无凭 | 每条关键结论绑定证据 + 置信度（高/中/低/存疑） |
-| 单一视角容易一边倒 | 专家团交叉研判，强制包含「红队反方」主动证伪 |
-| 骗局/马甲难发现 | 实体抽取 + 关联图谱，揪团伙式一致性（话术一致、同源收款等） |
-| 报告看完没法追问 | 对任意结论批注，一键深化再挖一层 |
+《中庸》讲做学问的五步：**博学之，审问之，慎思之，明辨之，笃行之**。
 
-**目标用户：** 面对高风险决策、被信息噪音淹没、需要「带证据、可追溯」研判的普通人与专业人士。  
-**典型场景：** 买房 / 买金 / 择时、入职前尽调、投资前避坑、识别理财骗局等。
+这不是文案，是这个产品的流水线本身——取证（博学）、质询（审问）、推理（慎思）、
+质检与裁定（明辨）、给出行动（笃行）。产品叫「明辨」，取的是第四步：
+**辨得清，才说得出。**
 
 ---
 
-## 设计理念：融合三套优秀范式（原创实现）
+## 它到底解决什么问题
 
-司南不是套壳，而是把三类获奖作品的 DNA **重新实现**进同一条流水线：
+你在网上搜「这个理财项目是不是骗局」，会得到几十条互相矛盾的说法。
+有的是营销号洗稿，有的是几年前的旧闻，有的干脆是同一篇稿子被三家网站转载。
+你没有时间一条条点开核实——而这恰恰是唯一有用的事。
 
-| 来源范式 | 吸收的核心能力 | 在司南中的落地 |
-|----------|----------------|----------------|
-| 多信号预言 | 只看数据不看观点；多源交叉找共振/背离；给概率 | 信号证据表 + 概率场景 + 整体置信度 |
-| 深度研究 Agent（混合检索协作） | 专家评审团；无证据不立论；DAG 流水线；批注深化；结构化可视化 | 7 类专家名册 + `sinan-meta` 驱动 UI + `/api/deepen` |
-| 情报分析（Meliora / Argus） | 实体抽取；隐藏关系 / 团伙发现；可监测 | 关联图谱；打假示例中展示马甲一致性 |
+明辨做的就是这件苦活：
 
-**命名说明：** 产品原创命名为「司南 SINAN」，与任何同赛道既有作品名称无关，避免混淆与抄袭嫌疑。
-
----
-
-## 专家评审团（7 席，按问题动态派遣 3–6 位）
-
-| Key | 专家 | 职责 |
-|-----|------|------|
-| `market` | 市场定价专家 | 预测市场赔率、期货持仓、期权 IV、利率曲线——用价格反推共识概率 |
-| `macro` | 宏观周期专家 | 利率、信贷/GDP、央行政策、领先指标，判断周期位置 |
-| `industry` | 行业竞争专家 | 格局、龙头、产能与估值，判断产业景气与拐点 |
-| `sentiment` | 舆情情报专家 | 多平台舆情聚类、情绪走向、识别水军/一致性操纵 |
-| `entity` | 关联溯源专家 | 抽取实体（人/机构/账号/产品），发现隐藏关系与团伙网络 |
-| `risk` | 风险合规专家 | 资质、司法、财务、监管、骗局信号，划定红线 |
-| `contra` | 红队反方专家 | **专门证伪**：主动找反例，攻击主流结论，避免一边倒 |
+| 常见困境 | 明辨的做法 |
+|---|---|
+| 观点满天飞，不知道信谁 | 只认可核验的来源，每条结论绑定证据 ID，点一下就能看原文 |
+| 模型张口就来，编出一个不存在的链接 | 模型引用的每个 URL 都真去访问一次，打不开的不计入证据强度 |
+| 三个来源其实是同一篇稿子 | 按主域归一 + 文本雷同聚类，转载副本不算独立来源 |
+| 「没搜到」被当成「不存在」 | 五种取证状态显式区分，没查到就写明查了什么、在哪查的 |
+| 报告写得漂亮但经不起追问 | 质检门禁会打回重做，未达标项如实写进报告，不掩盖 |
+| 置信度就是一个拍脑袋的百分比 | 拆成基准率 + 每一项调整 + 最终区间，每一步都写明理由 |
 
 ---
 
-## 研判流水线（DAG）
+## 核心设计：三条不肯让步的规矩
 
-```text
-用户提问
-   │
-   ▼
-① 拆解问题（核心变量 / 时间窗口 / 可证据化程度）
-   │
-   ▼
-② 组建专家团（从 7 席中挑 3–6 位，说明派遣理由）
-   │
-   ▼
-③ 多源取证（InfiniSynapse 联网 WebSearch，抽取信号+出处+可信度）
-   │
-   ▼
-④ 关联发现（实体抽取 → 隐藏关系 / 团伙式一致性）
-   │
-   ▼
-⑤ 交叉研判（共振 vs 背离，短/中/长分层，概率场景）
-   │
-   ▼
-⑥ 置信与边界（整体置信度 + 证据缺口诚实声明）
-   │
-   ▼
-输出双通道：
-   ├─ Markdown 人类可读报告
-   └─ ```sinan-meta``` 结构化 JSON → 前端可视化
-         │
-         ├─ 结论置信度仪表
-         ├─ 专家团卡片（立场色）
-         ├─ 概率场景条
-         ├─ 证据表（来源 + 置信）
-         └─ 关联关系图谱
+### 1. 无证据不立论
+
+论点强度由**代码**判定，不由模型自评。规则简单到可以当面手算：
+
+```
+没有证据                 -> unsupported（不支持）
+有反向证据且双方都成立     -> contested（存在争议）
+≥ 2 个独立主域            -> strong（强，且标记为已交叉验证）
+≥ 2 条同源证据            -> moderate（中等）
+仅 1 条                   -> weak（弱）
 ```
 
-**兜底策略：** 主引擎 `PRIMARY_ENGINE=infini`；InfiniSynapse 超时 / 空报告时自动切换 **MiniMax**，保证演示不断档。
+模型可以说得天花乱坠，但它给的每条论点会被拿去和真实抓取到的证据池比对。
+绑不上证据的论点，代码会把它标成 `unsupported` 并计入质检失分。
+
+### 2. 诚实降级
+
+取证失败时返回的不是空数组，而是一个结构化的**缺口（Gap）**，
+写清楚：查了哪些关键词、在什么范围内查的、索引新鲜度、以及「没查到」这件事本身有多可信。
+
+五种取证状态一律显式标注，绝不含糊：
+
+| 状态 | 含义 |
+|---|---|
+| `sourced` | 已取证，原文抓取成功 |
+| `pending` | 检索中 |
+| `retrieval_failed` | 链接打不开，可重试 |
+| `no_support_found` | 检索通道正常，但确实零命中 |
+| `not_searched` | 没检索，结论基于模型先验（会明确标出来） |
+
+### 3. 一切可回放
+
+每次运行都有完整的 trace：哪个专家、在哪个阶段、看了哪些证据、做了什么判断、
+花了多少毫秒。报告页旁边就是「决策回放」，可以一步步看它是怎么想到那儿去的。
 
 ---
 
-## 预置示例（首页零登录可看）
+## 双通道取证
 
-| ID | 标签 | 问题 |
-|----|------|------|
-| `house` | 楼市 | 中国房价还会跌多久？ |
-| `gold` | 黄金 | 现在适合买黄金吗？ |
-| `btc` | 加密 | 比特币见底了吗？ |
-| `ai` | 科技 | AI 是不是泡沫？ |
-| `jobdd` | 职场尽调 | 某公司给了 offer，值不值得入职？ |
-| `scam` | 打假反诈 | 这个号称「稳赚不赔、日返 3%」的项目是不是骗局？ |
+这是明辨和「套个壳调大模型」的根本区别——它自己也会查。
 
-> 服务器上执行 `seed_demos.py` 可用真实 API 重跑示例，写入真实 `taskId`，便于评委在 InfiniSynapse 后台核验。
-
----
-
-## InfiniSynapse API 集成（比赛要求）
-
-主引擎严格按官方异步规范：
-
-1. `GET /api/ai/events?connId=<uuid>` —— 先建 SSE 连接  
-2. `POST /api/ai/message` + `autoApprovalSettings` / `enableWebSearch: true` —— 开启联网  
-3. `POST /api/ai/message` + `newTask` —— 创建任务，拿到 **taskId**  
-4. SSE 流式消费 + 轮询 `/api/ai_task/tasks` 兜底取回报告（含 `sinan-meta`）  
-5. `POST /api/ai_task/setShare` —— 生成公开可核验链接  
-6. 「批注深化」再起一次轻量 `newTask`，顺着用户质疑继续挖  
-
-报告页展示真实 `taskId`，评委可在 [app.infinisynapse.cn](https://app.infinisynapse.cn) 任务后台核验。
-
-实现位置：`app/infini.py`（主引擎 + meta 抽取）、`app/orchestrator.py`（调度）、`app/minimax.py`（兜底）。
-
----
-
-## 产品界面（情报台）
-
-首页 `web/index.html` 按「情报工作台」设计，而不是普通聊天框：
-
-- **司南罗盘**品牌标识 + 一句话提问入口  
-- **结论置信度仪表**（整体概率 / 置信）  
-- **专家团卡片**（立场色：看多 / 看空 / 中性 / 存疑 / 高风险）  
-- **概率场景条**（多情景对比）  
-- **证据表**（信号 · 数据 · 含义 · 来源 · 置信度）  
-- **关联关系图谱**（实体节点 + 关系边）  
-- **批注深化框**（选中结论 → 质疑 → 再挖一层）  
-- **分享页** `web/report.html`（可携带 `taskId` / share 链接）
-
-若模型未按格式输出 `sinan-meta`，前端自动降级为纯 Markdown 报告，不白屏。
-
----
-
-## 目录结构
-
-```text
-sinan/
-├── app/
-│   ├── main.py            # Starlette 路由 / SSE / deepen
-│   ├── orchestrator.py    # 引擎调度（infini → minimax 兜底）
-│   ├── infini.py          # InfiniSynapse 官方 API 客户端 + meta 抽取
-│   ├── minimax.py         # MiniMax 兜底引擎
-│   ├── prompts.py         # 方法论、专家名册、深化 prompt
-│   ├── demos.py           # 预置示例读写
-│   ├── store.py           # 报告落盘
-│   └── envload.py         # .env 加载
-├── web/
-│   ├── index.html         # 情报台主 UI
-│   └── report.html        # 分享 / 报告页
-├── data/demos/*.json      # 6 份预置研判（含结构化 meta）
-├── deploy/
-│   ├── insert_nginx.py    # 幂等插入 nginx location
-│   └── nginx-sinan.snippet
-├── deploy.sh              # 一键部署（不动 Anker）
-├── seed_demos.py          # 用真实 API 重跑示例 + 写 taskId
-├── run.py                 # 本地 / systemd 入口
-├── requirements.txt
-├── .env.example
-└── 报名信息.md
+```
+                   ┌─ InfiniSynapse (deepseek-v4-pro)
+                   │    引擎自身的 agent 循环，自主联网检索十几轮
+   用户问题 ────────┤
+                   └─ 明辨自己的取证层
+                        ├─ 博查 Web Search   全网索引，结构化摘要 + 发布时间
+                        ├─ 语义排序 Rerank   按与问题的相关度重排，滤掉关键词碰巧命中
+                        ├─ 行情接口          新浪 / 东财 / Binance / CoinGecko 等实时数字
+                        └─ HTML 抓取兜底     搜狗 / 百度 / 360（博查不可用时接管）
+                                │
+                                ▼
+                        逐条访问核验 → 主域归一 → 可信度打分 → 雷同聚类
 ```
 
+**为什么要接博查：** 自己爬搜索引擎 HTML，拿不到发布时间，也拿不到干净的正文摘要。
+而来源可信度打分里「有没有发布日期」「时效多久」「摘录够不够长」全是加减分项。
+博查直接给结构化字段，取证质量和打分精度一起上来了。没配 key 也能跑，
+会自动退到 HTML 抓取，并在报告里如实标明「本次走的是兜底通道」。
+
+**为什么可信度不让模型打分：** 让模型给自己找的来源打分，等于让考生自己判卷。
+明辨的 `credibility.py` 是一套纯规则打分（0–100）：来源类型基础分、
+有无发布日期、时效、正文是否真的抓到、域名类别……每一分的来历都会在 UI 上列出来。
+
 ---
 
-## HTTP API
+## 专家团：16 席，三层，动态派遣
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET` | `/healthz` | 健康检查 + 引擎配置状态 |
-| `GET` | `/` | 情报台首页 |
-| `GET` | `/api/capabilities` | 能力说明 + 专家名册 |
-| `GET` | `/api/demos` | 预置示例列表 |
-| `GET` | `/api/demo/{id}` | 单个示例完整报告 + meta |
-| `POST` | `/api/analyze` | 实时研判（SSE 流式：status / plan / done / error） |
-| `POST` | `/api/deepen` | 批注深化（针对某条结论再挖一层） |
-| `GET` | `/report/{id}` | 分享报告页 |
+| 层 | 席位 | 职责示例 |
+|---|---|---|
+| 决策层（3，常驻） | 首席研判官 · 质检官 · 红队官 | 统合裁定 / 质检打回 / **专职证伪** |
+| 分析层（6） | 宏观周期 · 行业竞争 · 市场定价 · 财务尽调 · 司法风控 · 关联溯源 | 各自的专业视角与偏好信源 |
+| 取证层（7） | 官方公告 · 统计数据 · 财经媒体 · 舆情情报 · 社区口碑 · 学术研究 · 历史对照 | 分头去不同类型的来源里捞证据 |
 
-`POST /api/analyze` 请求体：
+派遣是**可解释**的：报告里会写「问题命中『骗局、稳赚、日返』，判定为反诈类，
+除常驻三席外追加派遣司法风控、关联溯源、官方公告、舆情情报、社区口碑」。
+不是随机凑人头。
 
-```json
-{ "question": "现在适合买黄金吗？" }
+红队官是刻意设计的——它的 KPI 是找出其他专家的漏洞，
+绝不为了达成共识而妥协。报告里的「争议点」和「少数派意见」由它产出。
+
+---
+
+## 流水线：七节点 DAG，带返工回路
+
+```
+① 意图漏斗      拆问题、判领域、定档位
+② 研判计划      派专家、列子问题、定检索策略
+③ 博学 · 取证    博查检索 + 行情接口 + 逐条访问核验
+④ 审问 · 质询    可信度打分、雷同聚类、独立性检验
+⑤ 慎思 · 推理    InfiniSynapse 加权推理与成文
+⑥ 质检 · 门禁    规则 + LLM 五维打分 ──未过──┐
+⑦ 笃行 · 落地    行动清单、实体图谱、指标      │
+                                              │
+        ┌─────────────────────────────────────┘
+        │ 证据不足 → 打回 ③ 补采
+        └ 推理有问题 → 打回 ⑤ 重写
 ```
 
-SSE 事件示例：`status` → `plan` → `done`（含 `markdown` / `meta` / `taskId` / `engine`）。
+返工不是摆设。规则层会检查：已核验证据数、独立主域数、论点绑证率、
+维度覆盖率、必备章节是否齐全。任何一项不达标就生成结构化 `Issue`，
+装进 `Envelope` 打回对应节点。**返工额度用满仍未达标，就把未达标项如实写进报告。**
+
+三个档位：
+
+| 档位 | 角度 | 取证 | 返工 | 实测耗时 |
+|---|---|---|---|---|
+| 速判（默认） | 4 | 6 条 | 0 轮 | 约 3 分半 |
+| 深研 | 6 | 12 条 | 1 轮 | 约 8 分钟 |
+| 专家 | 9 | 16 条 | 2 轮 | 约 14 分钟 |
+
+耗时是实测中位数，不是好看的数字。引擎自己要跑十几轮联网检索，
+与其写「40 秒」让人干等，不如一开始就说实话。首页的示例卡是提前跑好的真实报告，
+点开零等待。
 
 ---
 
-## 本地运行
+## 界面
+
+九个页面，同一套深色分析师控制台设计语言：
+
+| 页面 | 作用 |
+|---|---|
+| `/` | 提问 + **实时工作台**：DAG 进度、思维流、证据卡实时流入 |
+| `/report/{id}` | 研判报告：结论、置信度拆解、论点卡、证据表、争议点、缺口、行动清单 |
+| `/trace/{id}` | 决策回放：一步步重放每个专家的判断 |
+| `/graph/{id}` | 实体工作台：力导向图，点实体看它牵连的全部证据与论点 |
+| `/dashboard` | 产品指标：效率、覆盖、一致性、准确性、人工修正率（都给公式） |
+| `/experts` | 16 位专家名册与派遣规则 |
+| `/ledger` | **InfiniSynapse 调用台账**：每次调用的 taskId、模型、耗时，可核验 |
+| `/bench` | 10 道固定基准题与迭代曲线 |
+| `/about` | 方法论：铁律、取证状态、打分规则、IPCC 概率标度、指标定义 |
+
+交互上花了心思的地方：引用角标显示域名而不是 `[1]`（你一眼知道这条是政府网站还是自媒体）、
+点论点高亮对应证据行、划词可以就地深化追问、报告流式生成时用占位骨架而不是空白转圈。
+
+---
+
+## 快速开始
 
 ```bash
-git clone https://github.com/bcefghj/sinan.git
-cd sinan
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# 编辑 .env：填入 INFINI_API_KEY（及可选 MINIMAX_API_KEY）
-python run.py
-# 浏览器打开 http://127.0.0.1:8767/
+git clone <repo> && cd mingbian-app
+python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+cp .env.example .env      # 填 INFINI_API_KEY 和 BOCHA_API_KEY
+./.venv/bin/python run.py # 默认 127.0.0.1:8767
 ```
 
-依赖：`starlette`、`uvicorn`、`httpx`（见 `requirements.txt`）。
+必填配置：
 
----
+```ini
+INFINI_API_KEY=sk-xxxx            # InfiniSynapse，主引擎
+INFINI_MODEL=deepseek-v4-pro      # 显式锁定模型
+BOCHA_API_KEY=sk-xxxx             # 博查检索，不填会退到 HTML 抓取兜底
+PRIMARY_ENGINE=infini
+```
 
-## 部署到阿里云（多项目隔离，不动 Anker）
-
-本仓库按「一台服务器、多个作品」规范接入为**项目三**：
-
-| 项 | 值 |
-|----|-----|
-| 目录 | `/opt/projects/sinan` |
-| systemd | `sinan.service` |
-| 端口 | **8767**（Anker 为 8766，互不冲突） |
-| 公网路径 | `/sinan/` → 反代到本机 8767 |
-| 安全 | 服务只监听 `127.0.0.1`，外网走 nginx |
-
-`deploy.sh` 行为：
-
-1. 检查 root / nginx / 端口占用  
-2. `rsync` 同步代码（保留已有 `.env`，不覆盖密钥）  
-3. 建 venv + 装依赖（清华镜像）  
-4. 写 systemd 并启动  
-5. **备份** nginx 配置 → 幂等插入 `/sinan/` → `nginx -t` 失败则**自动回滚**
+生成首页示例（真跑，不是编的）：
 
 ```bash
-# 方式 A：git clone
-ssh root@你的服务器
-git clone https://github.com/bcefghj/sinan.git /root/sinan-app
-cd /root/sinan-app && sudo bash deploy.sh
-# 把真实密钥写入 /opt/projects/sinan/.env 后：
-sudo systemctl restart sinan
-
-# 方式 B：本地上传后部署
-scp -r . root@47.119.112.225:/root/sinan-app
-ssh root@47.119.112.225 'cd /root/sinan-app && sudo bash deploy.sh'
-
-# 强烈建议：用真实 API 生成带 taskId 的示例
-cd /opt/projects/sinan && ./.venv/bin/python seed_demos.py
-# 只跑部分：./.venv/bin/python seed_demos.py house gold scam
+./.venv/bin/python scripts/seed_demos.py        # 全部六个
+./.venv/bin/python scripts/seed_demos.py scam   # 只跑一个
 ```
 
-上线地址：**http://47.119.112.225/sinan/**
-
-验证 Anker 未受影响：
+部署到服务器（多项目隔离，独立 venv + systemd + nginx location）：
 
 ```bash
-systemctl is-active nginx sinan anker
-curl -s -o /dev/null -w 'sinan:%{http_code} anker:%{http_code}\n' \
-  http://127.0.0.1/sinan/app/ http://127.0.0.1/anker/app/
-```
-
-卸载（不影响其它项目）：
-
-```bash
-systemctl disable --now sinan.service
-# 手动删除 nginx 中 sinan location 段后：
-nginx -t && systemctl reload nginx
+sudo bash deploy.sh
 ```
 
 ---
 
-## 环境变量（`.env`）
+## 项目结构
 
-参考 `.env.example`（**切勿把真实 `.env` 提交进 git**）：
-
-| 变量 | 说明 | 默认 |
-|------|------|------|
-| `PRIMARY_ENGINE` | 主引擎：`infini` / `minimax` | `infini` |
-| `INFINI_API_KEY` | InfiniSynapse API Key（比赛主用） | — |
-| `INFINI_BASE_URL` | Infini 服务地址 | `https://app.infinisynapse.cn` |
-| `INFINI_ENABLE_WEBSEARCH` | 是否开启联网 | `true` |
-| `MINIMAX_API_KEY` | MiniMax 兜底 Key | — |
-| `MINIMAX_BASE_URL` | MiniMax API | `https://api.minimaxi.com/v1` |
-| `MINIMAX_MODEL` | 模型名（报错可换 `MiniMax-M2` / `MiniMax-Text-01` 等） | `MiniMax-M2.7` |
-| `PORT` / `HOST` | 监听端口与地址 | `8767` / `127.0.0.1` |
-| `ANALYZE_TIMEOUT` | 单次分析超时（秒） | `300` |
-
----
-
-## `sinan-meta` 结构化约定（前端可视化契约）
-
-模型须在 Markdown 报告之外输出围栏：
-
-````markdown
-```sinan-meta
-{
-  "topic": "问题精简标题",
-  "overall": {"verdict": "一句话判断", "probability": 0.55, "confidence": "高|中|低"},
-  "experts": [
-    {"key":"market","name":"市场定价专家","finding":"...","stance":"看多|看空|中性|存疑|高风险","confidence":"高|中|低"}
-  ],
-  "signals": [
-    {"layer":"第1层","name":"信号名","value":"数据","meaning":"含义","source":"出处","confidence":"高|中|低"}
-  ],
-  "scenarios": [{"name":"情景","probability":0.55,"basis":"依据"}],
-  "entities": [{"name":"实体","type":"人|机构|账号|产品|资产|指标"}],
-  "relations": [{"from":"A","to":"B","rel":"关系描述"}]
-}
 ```
-````
-
-后端在 `app/infini.py` 中解析该块；前端据此渲染仪表 / 卡片 / 图谱。
-
----
-
-## 常见问题
-
-| 现象 | 处理 |
-|------|------|
-| 报告或 meta 为空 | 看 `journalctl -u sinan.service -f`；后端已做 SSE+轮询+多字段容错；无 meta 时前端降级为 Markdown |
-| InfiniSynapse 慢 / 超时 | 等待兜底切 MiniMax；或调大 `ANALYZE_TIMEOUT` |
-| MiniMax 报模型名错误 | 改 `MINIMAX_MODEL` 为 `MiniMax-M2` / `MiniMax-Text-01` / `abab6.5s-chat` |
-| SSE 长时间无输出 | 确认 nginx `proxy_buffering off`（部署脚本已写入） |
-| 端口 8767 被占 | `ss -ltnp \| grep 8767` 查占用；勿与 Anker(8766) 混用 |
-| 想只更新代码 | 在服务器项目目录重新 `git pull` + `bash deploy.sh`（`.env` 会被保留） |
-
----
-
-## 技术栈
-
-- **后端：** Python 3 · Starlette · Uvicorn · httpx · asyncio SSE  
-- **前端：** 原生 HTML/CSS/JS（无构建、零依赖、情报台布局）  
-- **主 AI：** InfiniSynapse Server API（联网 WebSearch）  
-- **兜底 AI：** MiniMax  
-- **部署：** systemd + nginx 反代 · 多项目子路径隔离  
+app/
+  pipeline.py      七节点 DAG 编排、Envelope 传递、返工回路
+  models.py        数据契约：Evidence / Claim / Gap / Issue / Quality，以及论点强度规则
+  credibility.py   纯规则可信度打分，不经模型
+  audit.py         质检门禁：规则层 + LLM 五维评审
+  infini.py        InfiniSynapse 客户端，锁定 deepseek-v4-pro，SSE 流式
+  minimax.py       降级备用引擎，接口与主引擎一致
+  experts.py       16 席名册与动态派遣
+  prompts.py       提示词、mb-meta 结构化契约、档位配置
+  entities.py      实体归一、关系抽取、雷同聚类
+  trace.py         全链路追踪、事件日志、告警规则
+  metrics.py       产品指标计算（每个指标都带公式与口径说明）
+  bench.py         10 道固定基准题与历史曲线
+  store.py         报告存储 + InfiniSynapse 调用台账
+  collectors/
+    bocha.py       博查 Web Search + 语义排序（主检索通道）
+    search.py      检索调度：博查优先，HTML 抓取兜底
+    web.py         逐条访问核验，跟随 JS 跳转拿真实域名
+    market.py      实时行情接口
+web/
+  index.html + 八个页面，static/ 下是 mb.css 设计系统与三个 JS 模块
+```
 
 ---
 
-## 合规与声明
+## 比赛合规说明
 
-- 报告基于**公开证据的概率研判**，**不构成**投资 / 法律 / 医疗建议。  
-- 方法论吸收「只看数据」「专家团+证据链」「实体关联发现」等公开优秀范式，为**独立实现**；产品命名「司南 SINAN」为原创。  
-- API Key 仅放在服务器 `.env`，已被 `.gitignore` 排除，勿提交仓库。  
-- 请遵守 InfiniSynapse 与 MiniMax 各自服务条款及比赛规则。
-
----
-
-## 作者
-
-戴尚好 · 中国科学技术大学  
-GitHub：[@bcefghj](https://github.com/bcefghj) · Email：bcefghj@163.com
-
----
-
-## License
-
-本参赛作品代码以学习与比赛展示为目的开源；第三方 API 的使用权以各平台条款为准。
+- **主引擎为 InfiniSynapse 官方 Server API**，模型显式设定为 `deepseek-v4-pro`，
+  每次调用在会话中显式锁定模型，不依赖账户默认值。
+- **每次调用都落台账**（`/ledger`）：taskId、模型、问题、耗时、分享链接，
+  可在 InfiniSynapse 后台逐条核验。
+- MiniMax 仅作为降级备用通道，触发降级时 UI 会明确显示「已降级」，不冒充主引擎结果。
+- 博查 Web Search 用于取证层，与引擎自身的联网检索互为补充，两者的检索行为在思维流里都可见。

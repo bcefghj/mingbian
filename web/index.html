@@ -1,509 +1,300 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>司南 SINAN · 多智能体证据研判引擎</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
-<style>
-  :root{
-    --bg:#080b12;--bg2:#0e1420;--card:#111a2b;--card2:#0d1524;--line:#1e2b44;--line2:#26375a;
-    --txt:#e9eefb;--dim:#8394b5;--dim2:#5c6b8a;
-    --gold:#e9b949;--cyan:#41d4e8;--blue:#5b8cff;--grn:#43d17f;--red:#f36f6f;--amber:#f0a742;--violet:#9d7bff;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:
-      radial-gradient(1000px 500px at 78% -8%,rgba(65,212,232,.10),transparent 60%),
-      radial-gradient(900px 500px at 12% 0%,rgba(91,140,255,.10),transparent 55%),
-      var(--bg);
-    color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;min-height:100vh;line-height:1.65}
-  .wrap{max-width:1120px;margin:0 auto;padding:0 20px}
-  a{color:var(--cyan);text-decoration:none}
-  /* header */
-  header{text-align:center;padding:54px 0 8px}
-  .brand{display:inline-flex;align-items:center;gap:14px}
-  .compass{width:46px;height:46px;filter:drop-shadow(0 0 12px rgba(233,185,73,.4))}
-  h1{font-size:46px;letter-spacing:10px;font-weight:800;background:linear-gradient(90deg,#fff,#bcd0ff);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-  .en{color:var(--dim);letter-spacing:7px;font-size:13px;margin-top:2px}
-  .tag{color:var(--dim);font-size:16px;margin-top:14px}
-  .tag b{color:var(--cyan);font-weight:600}
-  .fuse{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:14px}
-  .fuse span{font-size:12px;color:var(--dim2);border:1px solid var(--line);border-radius:20px;padding:4px 12px}
-  .fuse span b{color:var(--gold);font-weight:600}
-  /* search */
-  .searchbox{margin:28px auto 6px;max-width:800px;background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line2);border-radius:16px;padding:8px 8px 8px 20px;display:flex;gap:10px;align-items:center;box-shadow:0 24px 70px -26px rgba(0,0,0,.8)}
-  .searchbox input{flex:1;background:transparent;border:0;color:var(--txt);font-size:17px;outline:none;padding:13px 0}
-  .searchbox button{background:linear-gradient(135deg,var(--gold),#cf9a24);color:#1a1305;border:0;border-radius:11px;padding:13px 26px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap}
-  .searchbox button:hover{filter:brightness(1.08)}
-  .chips{max-width:820px;margin:0 auto;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:6px 0}
-  .chip{background:#152036;border:1px solid var(--line);color:var(--dim);padding:6px 13px;border-radius:20px;font-size:13.5px;cursor:pointer}
-  .chip:hover{color:var(--txt);border-color:var(--cyan)}
-  .caps{max-width:980px;margin:26px auto 6px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-  .cap{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
-  .cap .n{font-weight:700;font-size:14.5px;color:#dbe6ff;display:flex;align-items:center;gap:8px}
-  .cap .n::before{content:"◆";color:var(--cyan);font-size:11px}
-  .cap .d{font-size:12.5px;color:var(--dim);margin-top:5px}
-  .section-t{max-width:980px;margin:34px auto 12px;font-size:13.5px;color:var(--dim);letter-spacing:1.5px;display:flex;align-items:center;gap:12px}
-  .section-t::before,.section-t::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line),transparent)}
-  .demos{max-width:980px;margin:0 auto 44px;display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
-  .demo{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:14px;padding:16px 18px;cursor:pointer;transition:.15s}
-  .demo:hover{border-color:var(--gold);transform:translateY(-2px)}
-  .demo .tag2{font-size:11px;color:var(--gold);letter-spacing:1px}
-  .demo .q{font-size:16.5px;font-weight:700;margin:6px 0}
-  .demo .h{font-size:13px;color:var(--dim)}
-  .demo .meta{display:flex;gap:10px;margin-top:10px;font-size:11.5px;color:var(--dim2)}
-  .demo .go{font-size:12.5px;color:var(--cyan);margin-top:8px}
-  /* result */
-  #result{display:none;padding:24px 0 70px}
-  .rtop{display:flex;align-items:center;gap:14px;margin-bottom:16px}
-  .back{background:#152036;border:1px solid var(--line);color:var(--dim);border-radius:9px;padding:8px 14px;cursor:pointer;font-size:14px}
-  .rq{font-size:20px;font-weight:800}
-  .grid{display:grid;grid-template-columns:296px 1fr;gap:22px;align-items:start}
-  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;position:sticky;top:16px}
-  .p-t{font-size:12px;color:var(--dim2);letter-spacing:1.5px;margin:2px 0 8px}
-  .dag{list-style:none}
-  .dag li{padding:8px 0 8px 28px;position:relative;color:var(--dim);font-size:13.5px;transition:color .2s}
-  .dag li::before{content:"";position:absolute;left:3px;top:12px;width:11px;height:11px;border-radius:50%;background:#2a3a5e;border:2px solid #2a3a5e}
-  .dag li::after{content:"";position:absolute;left:8px;top:24px;width:1px;height:calc(100% - 14px);background:#20304e}
-  .dag li:last-child::after{display:none}
-  .dag li.act{color:var(--txt)}.dag li.act::before{background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 0 4px rgba(65,212,232,.18);animation:pulse 1.4s ease-in-out infinite}
-  .dag li.ok{color:#b8f0cd}.dag li.ok::before{background:var(--grn);border-color:var(--grn);box-shadow:none;animation:none}
-  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
-  .live-msg{font-size:12px;color:var(--cyan);margin:8px 0 4px;min-height:18px}
-  .experts-mini{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
-  .emini{font-size:11.5px;border:1px solid var(--line);border-radius:16px;padding:3px 10px;color:var(--dim2);transition:.2s}
-  .emini.on{color:var(--txt);border-color:var(--cyan);background:rgba(65,212,232,.08);box-shadow:0 0 0 1px rgba(65,212,232,.15)}
-  .badge{display:inline-block;font-size:11px;padding:3px 9px;border-radius:6px}
-  .badge.g{background:rgba(67,209,127,.12);color:var(--grn);border:1px solid rgba(67,209,127,.3)}
-  .badge.c{background:rgba(65,212,232,.12);color:var(--cyan);border:1px solid rgba(65,212,232,.3)}
-  .badge.m{background:rgba(157,123,255,.12);color:var(--violet);border:1px solid rgba(157,123,255,.35)}
-  .taskid{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--dim2);word-break:break-all;margin-top:10px;padding:8px;background:#0a1120;border-radius:8px;border:1px solid var(--line)}
-  /* thought stream (对齐 08 Agent 思维流) */
-  .stream{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:14px;max-height:340px;overflow:auto}
-  .stream .st-h{font-size:12px;color:var(--dim2);letter-spacing:1px;margin-bottom:10px}
-  .thought{display:flex;gap:10px;margin:0 0 12px;animation:fadeUp .35s ease}
-  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
-  .thought .dot{width:28px;height:28px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;font-size:12px;font-weight:700}
-  .thought .body{flex:1;min-width:0}
-  .thought .kind{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600}
-  .thought .who{font-size:11px;color:var(--dim2);margin-left:6px}
-  .thought .txt{font-size:13.5px;color:#cdd8f5;margin-top:4px;line-height:1.55}
-  .k-plan .dot{background:rgba(91,140,255,.18);color:var(--blue)}.k-plan .kind{background:rgba(91,140,255,.15);color:var(--blue)}
-  .k-dispatch .dot{background:rgba(233,185,73,.18);color:var(--gold)}.k-dispatch .kind{background:rgba(233,185,73,.15);color:var(--gold)}
-  .k-action .dot{background:rgba(240,167,66,.18);color:var(--amber)}.k-action .kind{background:rgba(240,167,66,.15);color:var(--amber)}
-  .k-finding .dot{background:rgba(67,209,127,.18);color:var(--grn)}.k-finding .kind{background:rgba(67,209,127,.15);color:var(--grn)}
-  .k-reflect .dot{background:rgba(243,111,111,.18);color:var(--red)}.k-reflect .kind{background:rgba(243,111,111,.15);color:var(--red)}
-  #reportMount{min-width:0}
-  /* report body */
-  .rmain{min-width:0}
-  .verdict{background:linear-gradient(135deg,#12203a,#0e1626);border:1px solid var(--line2);border-radius:16px;padding:20px 22px;display:flex;gap:22px;align-items:center;margin-bottom:16px}
-  .verdict .vtxt{flex:1}
-  .verdict .vlabel{font-size:12px;color:var(--gold);letter-spacing:1px}
-  .verdict .vmain{font-size:19px;font-weight:800;margin-top:4px;line-height:1.5}
-  .gauge{width:110px;height:110px;flex-shrink:0;position:relative}
-  .gauge .val{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-  .gauge .pct{font-size:26px;font-weight:800}
-  .gauge .cf{font-size:11px;color:var(--dim)}
-  .block{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px}
-  .block h3{font-size:15px;color:var(--cyan);margin-bottom:12px;display:flex;align-items:center;gap:8px}
-  .block h3 .ic{width:16px;height:16px}
-  .ecards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .ecard{background:var(--card2);border:1px solid var(--line);border-radius:11px;padding:12px 14px;border-left:3px solid var(--blue)}
-  .ecard .en2{font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center}
-  .ecard .rl{font-size:11px;color:var(--dim2);margin:2px 0 6px}
-  .ecard .fd{font-size:13px;color:#cdd8f5}
-  .stance{font-size:11px;padding:2px 8px;border-radius:5px}
-  .s-up{background:rgba(67,209,127,.14);color:var(--grn)} .s-down{background:rgba(243,111,111,.14);color:var(--red)}
-  .s-mid{background:rgba(91,140,255,.14);color:var(--blue)} .s-warn{background:rgba(240,167,66,.14);color:var(--amber)}
-  .scenarios .sc{margin:9px 0}
-  .scenarios .sc .row{display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:4px}
-  .scenarios .bar{height:9px;background:#0a1120;border-radius:5px;overflow:hidden}
-  .scenarios .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--blue))}
-  .scenarios .basis{font-size:12px;color:var(--dim);margin-top:3px}
-  table.sig{border-collapse:collapse;width:100%;font-size:13px}
-  table.sig th,table.sig td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
-  table.sig th{background:#0a1120;color:#cdd8f5;font-size:12px}
-  .cf-h{color:var(--grn)}.cf-m{color:var(--amber)}.cf-l{color:var(--dim2)}.cf-x{color:var(--red)}
-  .relwrap{display:grid;grid-template-columns:1fr;gap:14px;align-items:start}
-  .rellist{font-size:13px;display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
-  .rellist .r{padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:#0a1120}
-  .rellist .r b{color:#dbe6ff}.rellist .r .arw{color:var(--gold);margin:0 6px;font-size:12px}
-  .kg-box{background:#0a1120;border:1px solid var(--line);border-radius:12px;overflow:hidden;position:relative}
-  .kg-legend{display:flex;flex-wrap:wrap;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--dim);align-items:center}
-  .kg-legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
-  .kg-stage{position:relative;height:420px}
-  .kg-svg{width:100%;height:100%;display:block;touch-action:none}
-  .kg-tip{position:absolute;left:12px;bottom:10px;font-size:11px;color:var(--dim2);pointer-events:none}
-  .kg-fs{position:absolute;right:10px;top:10px;z-index:2;background:#152036;border:1px solid var(--line);color:var(--cyan);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer}
-  .kg-fs:hover{border-color:var(--cyan)}
-  #kgModal{display:none;position:fixed;inset:0;z-index:80;background:rgba(4,8,16,.92);flex-direction:column}
-  #kgModal.on{display:flex}
-  #kgModal .mh{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);color:var(--txt)}
-  #kgModal .mh button{background:#152036;border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:8px 12px;cursor:pointer}
-  #kgModalSvg{flex:1;width:100%}
-  .md-toggle{font-size:13px;color:var(--dim);cursor:pointer;margin:10px 0 6px;user-select:none}
-  .md-toggle:hover{color:var(--cyan)}
-  .asof{font-size:12px;color:var(--dim2);margin-top:6px}
-  @media(max-width:860px){.rellist{grid-template-columns:1fr}.kg-stage{height:320px}}
-  .diverg{background:rgba(240,167,66,.07);border:1px solid rgba(240,167,66,.25);border-radius:10px;padding:10px 14px;font-size:13px;color:#f2d9ad;margin-top:6px}
-  .report-md{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 26px}
-  .report-md h1{font-size:23px}.report-md h2{font-size:18px;color:var(--gold);border-bottom:1px solid var(--line);padding-bottom:6px;margin:1.1em 0 .5em}
-  .report-md h3{font-size:15px;color:var(--cyan)}
-  .report-md table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13px}
-  .report-md th,.report-md td{border:1px solid var(--line);padding:7px 9px}.report-md th{background:#0a1120}
-  .report-md blockquote{border-left:3px solid var(--gold);background:#0a1120;padding:9px 15px;border-radius:0 8px 8px 0;color:#e3ebff}
-  .report-md code{background:#0a1120;padding:2px 6px;border-radius:4px}
-  .deepen{background:var(--card);border:1px dashed var(--line2);border-radius:12px;padding:14px 16px;margin-top:14px}
-  .deepen .dt{font-size:13px;color:var(--dim);margin-bottom:8px}
-  .deepen .drow{display:flex;gap:8px}
-  .deepen input{flex:1;background:#0a1120;border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:9px 12px;font-size:14px;outline:none}
-  .deepen button{background:#182742;border:1px solid var(--line2);color:var(--cyan);border-radius:9px;padding:9px 16px;cursor:pointer;font-size:14px}
-  .deepen .out{margin-top:12px;font-size:13.5px;color:#d7e0f6}
-  .actions{margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  .actions button{background:#152036;border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:9px 15px;cursor:pointer;font-size:14px}
-  .cursorblink::after{content:"▌";color:var(--cyan);animation:bl 1s steps(2) infinite}
-  @keyframes bl{50%{opacity:0}}
-  .muted{color:var(--dim);font-size:13px}
-  footer{text-align:center;color:var(--dim2);font-size:12px;padding:26px 0}
-  @media(max-width:860px){.caps,.demos,.ecards,.relwrap{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.panel{position:static}h1{font-size:34px;letter-spacing:6px}}
-</style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>明辨 MINGBIAN · 多智能体证据研判引擎</title>
+<meta name="description" content="不给你观点，给你一条能追到底的证据链。基于 InfiniSynapse deepseek-v4-pro 的多智能体证据研判引擎。">
+<script>
+/* 应用可能挂在 /mingbian/app/ 这类子路径下，且 /report/{id} 比根深一层。
+   统一算出 base，之后全站一律用 ./ 相对路径。 */
+(function () {
+  var b = location.pathname
+    .replace(/(report|trace|graph)\/[^/]*$/, '')
+    .replace(/(dashboard|experts|ledger|bench|about)\/?$/, '')
+    .replace(/index\.html$/, '');
+  if (b.slice(-1) !== '/') b += '/';
+  document.write('<base href="' + b + '">');
+})();
+</script>
+<link rel="icon" href="./static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./static/mb.css">
 </head>
 <body>
-<div class="wrap">
-  <div id="home">
-    <header>
-      <div class="brand">
-        <svg class="compass" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="none" stroke="#e9b949" stroke-width="3"/><circle cx="50" cy="50" r="36" fill="none" stroke="#26375a" stroke-width="1.5"/><polygon points="50,16 58,50 50,58 42,50" fill="#f36f6f"/><polygon points="50,84 42,50 50,42 58,50" fill="#e9eefb"/><circle cx="50" cy="50" r="4" fill="#41d4e8"/></svg>
-        <div><h1>司 南</h1><div class="en">S I N A N · 证据研判引擎</div></div>
-      </div>
-      <div class="tag">派一支<b>专家评审团</b>，为你多源取证、<b>无证据不立论</b>，把纷杂信息研判成<b>一个可信的方向</b></div>
-      <div class="fuse">
-        <span>融合 <b>多信号预言</b> 的只看数据</span>
-        <span><b>深度研究Agent</b> 的专家团+证据链</span>
-        <span><b>情报分析</b> 的关联发现</span>
-      </div>
-    </header>
-    <div class="searchbox">
-      <input id="q" placeholder="问一个需要判断的问题，例如：这只票的期权溢价是不是太高了？" autocomplete="off">
-      <button onclick="ask()">研 判</button>
-    </div>
-    <div class="chips" id="chips"></div>
-    <div class="caps" id="caps"></div>
-    <div class="section-t">示例研判 · 零登录即可查看完整证据链</div>
-    <div class="demos" id="demos"></div>
-  </div>
+<header id="topbar"></header>
 
-  <div id="result">
-    <div class="rtop"><button class="back" onclick="goHome()">← 返回</button><div class="rq" id="rq"></div></div>
-    <div class="grid">
-      <div class="panel">
-        <div class="p-t">研判流水线 DAG</div>
-        <ul class="dag" id="dag">
-          <li data-k="intake">① 拆解问题 · 组建专家团</li>
-          <li data-k="collect">② 多源取证 · 抽取信号</li>
-          <li data-k="analyze">③ 关联发现 · 交叉研判</li>
-          <li data-k="done">④ 概率场景 · 成文</li>
-        </ul>
-        <div class="live-msg" id="livemsg">待命</div>
-        <div class="p-t" style="margin-top:10px">派遣的专家</div>
-        <div class="experts-mini" id="emini"></div>
-        <div id="enginebadge" style="margin-top:12px"></div>
-        <div class="taskid" id="taskid" style="display:none"></div>
+<div class="wrap-wide">
+
+  <!-- ============ Hero ============ -->
+  <section class="hero" id="hero">
+    <div class="eyebrow">博学 · 审问 · 慎思 · 明辨 · 笃行</div>
+    <h1>不给你观点，<br>给你一条能追到底的证据链。</h1>
+    <p class="sub">
+      问一个需要下判断的问题。明辨会派出一支专家团联网取证、交叉质询、红队证伪，
+      最后给你一份每条结论都绑着证据、每个概率都写明怎么算出来的研判报告——
+      包括它没查到什么。
+    </p>
+
+    <div class="mt28" style="max-width:840px">
+      <div class="ask-box">
+        <textarea id="q" class="field" rows="3"
+          placeholder="比如：有人推荐一个「日返 1.5%、稳赚不赔」的理财项目，是骗局吗？"></textarea>
+        <div class="ask-bar">
+          <div class="seg" id="modeSeg"></div>
+          <span class="t4 fs11" id="modeHint"></span>
+          <span class="spacer"></span>
+          <button class="btn btn-primary" id="go">开始研判</button>
+        </div>
       </div>
-      <div class="rmain" id="rmain">
-        <div class="stream" id="stream"><div class="st-h">实时思维流 · AGENT STREAM</div><div id="thoughts"></div></div>
-        <div id="reportMount"></div>
+      <div class="row wrapflex mt12" style="gap:7px" id="quickQs"></div>
+    </div>
+  </section>
+
+  <!-- ============ 工作台（运行时显示） ============ -->
+  <section id="workbench" class="hide" style="padding-bottom:8px">
+    <div class="row-between mb16">
+      <div class="grow">
+        <div class="t4 fs11">正在研判</div>
+        <div class="fs16 t1" id="runningQ"></div>
+      </div>
+      <button class="btn btn-sm" id="btnReset">换个问题</button>
+    </div>
+    <div id="liveHost"></div>
+  </section>
+
+  <!-- ============ 结果 ============ -->
+  <section id="resultWrap" class="hide" style="padding-bottom:8px">
+    <div class="row-between mb16 wrapflex">
+      <div class="grow">
+        <div class="t4 fs11">研判完成</div>
+        <div class="fs16 t1" id="doneQ"></div>
+      </div>
+      <div class="row" style="gap:7px">
+        <button class="btn btn-sm" id="btnCopyLink">复制分享链接</button>
+        <button class="btn btn-sm" id="btnWatch">加入关注</button>
+        <button class="btn btn-sm" id="btnAgain">换个问题</button>
       </div>
     </div>
+    <div id="reportHost"></div>
+  </section>
+
+  <!-- ============ 首页内容 ============ -->
+  <div id="landing">
+
+    <section class="mt28">
+      <div class="stage-strip" id="stageStrip"></div>
+    </section>
+
+    <section class="mt28">
+      <div class="row-between mb12">
+        <h2 class="fs20">它到底做了什么</h2>
+        <a class="t3 fs13" href="./about">完整方法论 →</a>
+      </div>
+      <div class="grid grid-4" id="capGrid"></div>
+    </section>
+
+    <section class="mt28">
+      <div class="row-between mb12">
+        <h2 class="fs20">已跑过的真实案例</h2>
+        <span class="t4 fs12">点开即看完整证据链，无需等待、无需登录</span>
+      </div>
+      <div class="grid grid-3" id="demoGrid">
+        <div class="card"><div class="skel w80"></div><div class="skel w60"></div></div>
+        <div class="card"><div class="skel w60"></div><div class="skel w80"></div></div>
+        <div class="card"><div class="skel w80"></div><div class="skel w40"></div></div>
+      </div>
+    </section>
+
+    <section class="mt28">
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-title">为什么可以信</div>
+          <div class="col" style="gap:11px">
+            <div class="row" style="gap:10px;align-items:flex-start">
+              <span class="tag tag-ok">代码判定</span>
+              <span class="fs13 t3 grow">论点强度按独立来源数由代码判定，模型说自己「很有把握」不作数。</span>
+            </div>
+            <div class="row" style="gap:10px;align-items:flex-start">
+              <span class="tag tag-accent">白名单校验</span>
+              <span class="fs13 t3 grow">模型引用了不存在的证据 ID，后端直接丢弃并记一条质检问题。</span>
+            </div>
+            <div class="row" style="gap:10px;align-items:flex-start">
+              <span class="tag tag-warn">真去访问</span>
+              <span class="fs13 t3 grow">每个引用链接都会被真的打开一次，打不开的不进证据池。</span>
+            </div>
+            <div class="row" style="gap:10px;align-items:flex-start">
+              <span class="tag tag-bad">诚实缺口</span>
+              <span class="fs13 t3 grow">搜不到就写清楚搜了哪几组词、范围多大，绝不用估算数字填洞。</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">运行凭证</div>
+          <div class="t3 fs13 mb12">
+            后端通过 InfiniSynapse Server API 调用 deepseek-v4-pro，每次调用都留下真实 taskId。
+            这些记录可在平台后台逐条查验。
+          </div>
+          <div id="ledgerMini" class="col" style="gap:7px">
+            <div class="skel w60"></div><div class="skel w80"></div>
+          </div>
+          <div class="mt12"><a class="fs13" href="./ledger">查看完整调用台账 →</a></div>
+        </div>
+      </div>
+    </section>
   </div>
 </div>
-<footer>司南 SINAN · 证据驱动多智能体研判 · 报告为公开证据的概率研判，不构成投资/法律/医疗建议</footer>
 
-<div id="kgModal">
-  <div class="mh">
-    <button type="button" onclick="closeKgFullscreen()">← 返回报告</button>
-    <span style="font-weight:700">知识图谱 · 结论与证据溯源网络</span>
-    <span class="muted" style="margin-left:auto">滚轮缩放 · 拖拽平移 · 拖动节点</span>
-  </div>
-  <svg id="kgModalSvg"></svg>
-</div>
+<footer id="footer"></footer>
 
+<script src="./static/mb-core.js"></script>
+<script src="./static/mb-report.js"></script>
+<script src="./static/mb-live.js"></script>
 <script>
-const EXAMPLES=["中国房价还会跌多久？","现在适合买黄金吗？","比特币见底了吗？","AI 是不是泡沫？","这家公司值不值得入职？","这个「稳赚」项目是不是骗局？"];
-const $=s=>document.querySelector(s);
-let ROSTER=[];
-function chips(){$("#chips").innerHTML=EXAMPLES.map(e=>`<span class="chip" onclick="fill(this)">${e}</span>`).join("")}
-function fill(el){$("#q").value=el.textContent;$("#q").focus();window.scrollTo({top:0,behavior:'smooth'})}
-async function loadCaps(){try{const d=await(await fetch("api/capabilities")).json();ROSTER=d.experts||[];nameByKey={};ROSTER.forEach(e=>nameByKey[e.key]=e.name);$("#caps").innerHTML=d.capabilities.map(c=>`<div class="cap"><div class="n">${c.name}</div><div class="d">${c.desc}</div></div>`).join("")}catch(e){}}
-async function loadDemos(){try{const d=await(await fetch("api/demos")).json();$("#demos").innerHTML=(d.demos||[]).map(x=>`<div class="demo" onclick="openDemo('${x.id}')"><div class="tag2">${x.tag||'示例研判'}</div><div class="q">${x.question}</div><div class="h">${x.headline||''}</div><div class="meta"><span>◆ ${x.experts||''} 位专家</span><span>◆ ${x.evidence||''} 条证据</span></div><div class="go">查看完整研判 →</div></div>`).join("")}catch(e){}}
-function goHome(){$("#result").style.display="none";$("#home").style.display="block";if(window._c)window._c.abort()}
-function setStep(k){const o=["intake","collect","analyze","done"],i=o.indexOf(k);document.querySelectorAll("#dag li").forEach(li=>{const j=o.indexOf(li.dataset.k);li.classList.toggle("act",j===i&&j>=0);li.classList.toggle("ok",j>=0&&j<i)})}
-function setLive(msg){const el=$("#livemsg");if(el)el.textContent=msg||""}
-function lightExperts(keys){const set=new Set(keys||[]);document.querySelectorAll("#emini .emini").forEach(e=>{if(set.has(e.dataset.k))e.classList.add("on")})}
-function lightOne(key){const el=document.querySelector(`#emini .emini[data-k="${key}"]`);if(el)el.classList.add("on")}
-function renderEminis(){const roster=ROSTER.length?ROSTER:[];$("#emini").innerHTML=roster.map(e=>`<span class="emini" data-k="${e.key}">${e.name}</span>`).join("")}
-const CF={"高":"cf-h","中":"cf-m","低":"cf-l","存疑":"cf-x"};
-const STANCE={"看多":"s-up","看空":"s-down","中性":"s-mid","存疑":"s-warn","高风险":"s-down"};
-const KIND_LABEL={plan:"规划",dispatch:"派遣",action:"执行",finding:"发现",reflect:"反思"};
-const KIND_ICON={plan:"◎",dispatch:"➔",action:"⚙",finding:"✦",reflect:"↺"};
-let cur={}, thoughts=[], nameByKey={};
+(function () {
+  const { $, el, esc, getJSON, postJSON, toast, copy } = MB;
+  MB.mountTopbar('研判台');
+  MB.mountFooter();
 
-function esc(s){return (s==null?"":String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
-function resetStream(){thoughts=[];const t=$("#thoughts");if(t)t.innerHTML="";const s=$("#stream");if(s)s.style.display="block";const m=$("#reportMount");if(m)m.innerHTML=""}
-function pushThought(d){
-  const kind=d.kind||"action";
-  const who=d.expert?(nameByKey[d.expert]||d.expert):"";
-  thoughts.push(d);
-  const box=$("#thoughts"); if(!box) return;
-  const div=document.createElement("div");
-  div.className="thought k-"+kind;
-  div.innerHTML=`<div class="dot">${KIND_ICON[kind]||"·"}</div><div class="body"><span class="kind">${KIND_LABEL[kind]||kind}</span>${who?`<span class="who">${esc(who)}</span>`:""}<div class="txt">${esc(d.text||"")}</div></div>`;
-  box.appendChild(div);
-  const stream=$("#stream"); if(stream) stream.scrollTop=stream.scrollHeight;
-  if(d.step) setStep(d.step);
-  if(d.text) setLive(d.text.slice(0,42)+(d.text.length>42?"…":""));
-  if(d.expert) lightOne(d.expert);
-}
+  let MODE = 'quick';
+  let live = null;
+  let currentReport = null;
 
-function renderReport(q,markdown,meta,streaming){
-  let html="";
-  if(meta && Object.keys(meta).length){
-    const ov=meta.overall||{};
-    const pct=ov.probability!=null?Math.round(ov.probability*100):null;
-    const asof=meta.as_of||"";
-    html+=`<div class="verdict"><div class="vtxt"><div class="vlabel">司南结论</div><div class="vmain">${esc(ov.verdict||'—')}</div>${asof?`<div class="asof">数据截至 ${esc(asof)}</div>`:""}</div>`;
-    if(pct!=null){const c=pct/100*283;html+=`<div class="gauge"><svg viewBox="0 0 100 100" style="transform:rotate(-90deg)"><circle cx="50" cy="50" r="45" fill="none" stroke="#182742" stroke-width="9"/><circle cx="50" cy="50" r="45" fill="none" stroke="#41d4e8" stroke-width="9" stroke-linecap="round" stroke-dasharray="${c} 283"/></svg><div class="val"><div class="pct">${pct}%</div><div class="cf">置信 ${esc(ov.confidence||'')}</div></div></div>`;}
-    else if(ov.confidence){html+=`<div class="gauge"><div class="val"><div class="pct" style="font-size:19px">${esc(ov.confidence)}</div><div class="cf">整体置信</div></div></div>`;}
-    html+=`</div>`;
-    if((meta.experts||[]).length){html+=`<div class="block"><h3>◈ 专家团研判（${meta.experts.length}）</h3><div class="ecards">`+meta.experts.map(e=>`<div class="ecard"><div class="en2">${esc(e.name||e.key)} <span class="stance ${STANCE[e.stance]||'s-mid'}">${esc(e.stance||'')}</span></div><div class="rl">置信 <span class="${CF[e.confidence]||'cf-m'}">${esc(e.confidence||'')}</span></div><div class="fd">${esc(e.finding||'')}</div></div>`).join("")+`</div></div>`;}
-    if((meta.scenarios||[]).length){html+=`<div class="block"><h3>◈ 概率场景</h3><div class="scenarios">`+meta.scenarios.map(s=>{const p=Math.round((s.probability||0)*100);return `<div class="sc"><div class="row"><span>${esc(s.name)}</span><b>${p}%</b></div><div class="bar"><i style="width:${p}%"></i></div><div class="basis">${esc(s.basis||'')}</div></div>`}).join("")+`</div></div>`;}
-    if((meta.signals||[]).length){html+=`<div class="block"><h3>◈ 信号证据表（无证据不立论）</h3><table class="sig"><tr><th>层</th><th>信号</th><th>数据</th><th>含义</th><th>来源</th><th>置信</th></tr>`+meta.signals.map(s=>`<tr><td>${esc(s.layer||'')}</td><td>${esc(s.name)}</td><td>${esc(s.value||'')}</td><td>${esc(s.meaning||'')}</td><td>${esc(s.source||'')}</td><td class="${CF[s.confidence]||'cf-m'}">${esc(s.confidence||'')}</td></tr>`).join("")+`</table></div>`;}
-    // 08 风格：结论—证据—实体 知识图谱（有 meta 即画，不依赖 relations 非空）
-    if(!streaming && ((meta.entities&&meta.entities.length)||(meta.relations&&meta.relations.length)||(meta.experts&&meta.experts.length)||(meta.signals&&meta.signals.length))){
-      html+=`<div class="block"><h3>◈ 知识图谱 · 结论与证据溯源网络</h3>`+kgShell()+
-        ((meta.relations||[]).length?`<div class="rellist" style="margin-top:12px">`+
-        (meta.relations||[]).slice(0,16).map(r=>`<div class="r"><b>${esc(r.from)}</b><span class="arw">→</span><b>${esc(r.to)}</b><div class="muted" style="margin-top:3px">${esc(r.rel||'')}</div></div>`).join("")+
-        `</div>`:"")+`</div>`;
+  const QUICK = [
+    '现在这个时点，一线城市房价还会继续跌吗？',
+    '黄金现在还能追高吗？',
+    'AI 算力投资是不是已经进入泡沫阶段？',
+    '有人推荐「日返 1.5%、稳赚不赔」的理财，是骗局吗？',
+    '一家 C 轮公司给了 offer，值不值得从大厂跳过去？',
+  ];
+
+  /* ---------------- 首页数据 ---------------- */
+
+  getJSON('./api/meta').then(m => {
+    $('#stageStrip').innerHTML = (m.stages || []).map(s =>
+      `<div class="stage-cell"><div class="cn">${esc(s.cn)}</div>` +
+      `<div class="en">${esc(s.title)}</div>` +
+      `<div class="ds">${esc(s.desc)}</div></div>`).join('');
+
+    $('#capGrid').innerHTML = (m.capabilities || []).map(c =>
+      `<div class="card"><div class="t1 fs13 mb8">${esc(c.title)}</div>` +
+      `<div class="t3 fs12" style="line-height:1.7">${esc(c.desc)}</div></div>`).join('');
+
+    const modes = m.modes || {};
+    $('#modeSeg').innerHTML = ['quick', 'deep', 'expert'].filter(k => modes[k]).map(k =>
+      `<button data-mode="${k}" class="${k === MODE ? 'on' : ''}">${esc(modes[k].name)}</button>`).join('');
+    MB.$$('#modeSeg button').forEach(b => b.addEventListener('click', () => {
+      MODE = b.dataset.mode;
+      MB.$$('#modeSeg button').forEach(x => x.classList.toggle('on', x === b));
+      $('#modeHint').textContent = (modes[MODE] || {}).desc || '';
+    }));
+    $('#modeHint').textContent = (modes[MODE] || {}).desc || '';
+  }).catch(() => { });
+
+  $('#quickQs').innerHTML = QUICK.map(q =>
+    `<button class="chip-q">${esc(q)}</button>`).join('');
+  MB.$$('#quickQs .chip-q').forEach(b => b.addEventListener('click', () => {
+    $('#q').value = b.textContent; $('#q').focus();
+  }));
+
+  getJSON('./api/demos').then(d => {
+    const items = d.demos || [];
+    if (!items.length) {
+      $('#demoGrid').innerHTML = `<div class="empty" style="grid-column:1/-1">` +
+        `还没有预置案例。在上面提一个问题就能生成第一份研判。</div>`;
+      return;
     }
-    if((meta.divergences||[]).length){html+=`<div class="block"><h3>◈ 关键背离</h3>`+meta.divergences.map(d=>`<div class="diverg">⚠ ${esc(d)}</div>`).join("")+`</div>`;}
+    $('#demoGrid').innerHTML = items.map(x =>
+      `<div class="demo-card" data-demo="${esc(x.id)}">` +
+      `<div class="q">${esc(x.question)}</div>` +
+      (x.headline ? `<div class="h">${esc(x.headline)}</div>` : '') +
+      `<div class="row wrapflex mt12" style="gap:6px">` +
+      (x.tag ? `<span class="tag tag-accent">${esc(x.tag)}</span>` : '') +
+      (x.evidence ? `<span class="tag">${esc(x.evidence)}</span>` : '') +
+      `</div></div>`).join('');
+    MB.$$('#demoGrid .demo-card').forEach(c => c.addEventListener('click', () => {
+      location.href = './report/' + c.dataset.demo;
+    }));
+  }).catch(() => { });
+
+  getJSON('./api/ledger').then(d => {
+    const rows = (d.rows || []).slice(0, 3);
+    const s = d.stats || {};
+    $('#ledgerMini').innerHTML =
+      `<div class="row-between fs12"><span class="t4">累计调用</span>` +
+      `<b class="mono t1">${s.total_calls || 0}</b></div>` +
+      `<div class="row-between fs12"><span class="t4">带 taskId 的 Infini 调用</span>` +
+      `<b class="mono t1">${s.infini_calls || 0}</b></div>` +
+      (rows.length ? rows.map(r =>
+        `<div class="inset fs11"><div class="mono t3">${esc((r.taskId || '').slice(0, 22))}</div>` +
+        `<div class="t4 mt4">${esc(r.model || '')} · ${MB.fmtTime(r.ts)}</div></div>`).join('')
+        : `<div class="t4 fs12">暂无调用记录，跑一次研判就会写入。</div>`);
+  }).catch(() => { });
+
+  /* ---------------- 运行 ---------------- */
+
+  function run(question) {
+    if (!question || question.length < 6) { toast('把问题说完整一点，至少 6 个字'); return; }
+    $('#landing').classList.add('hide');
+    $('#hero').classList.add('hide');
+    $('#resultWrap').classList.add('hide');
+    $('#workbench').classList.remove('hide');
+    $('#runningQ').textContent = question;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    live = new MBLive({
+      host: $('#liveHost'),
+      onDone: report => {
+        if (!report) return;
+        currentReport = report;
+        setTimeout(() => {
+          $('#workbench').classList.add('hide');
+          $('#resultWrap').classList.remove('hide');
+          $('#doneQ').textContent = report.question || question;
+          MBReport.render($('#reportHost'), report, {});
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 600);
+      },
+    });
+    live.start(question, MODE);
   }
-  // 有结构化 meta 时默认展开文字报告，可一键收起
-  if(markdown && meta && Object.keys(meta).length && !streaming){
-    html+=`<div class="md-toggle" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.nextElementSibling.style.display==='none'?'▸ 展开完整文字报告':'▾ 收起完整文字报告'">▾ 收起完整文字报告</div>`;
-    html+=`<div style="display:block"><div class="report-md" id="md">${marked.parse(markdown||"")}</div></div>`;
-  } else if(markdown){
-    html+=`<div class="block" style="padding:0;background:transparent;border:none"><div class="report-md ${streaming?'cursorblink':''}" id="md">${marked.parse(markdown||"")}</div></div>`;
+
+  $('#go').addEventListener('click', () => run($('#q').value.trim()));
+  $('#q').addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') run($('#q').value.trim());
+  });
+
+  function reset() {
+    $('#workbench').classList.add('hide');
+    $('#resultWrap').classList.add('hide');
+    $('#hero').classList.remove('hide');
+    $('#landing').classList.remove('hide');
+    $('#liveHost').innerHTML = '';
+    $('#q').focus();
   }
-  if(!streaming){
-    html+=`<div class="deepen"><div class="dt">🔍 对结论有疑问？输入批注，让司南顺着你的质疑再深挖一层</div><div class="drow"><input id="anno" placeholder="例如：为什么没考虑政策强刺激的可能？"><button onclick="deepen()">深化</button></div><div class="out" id="deepout"></div></div>`;
-    html+=`<div class="actions"><button onclick="copyLink()">🔗 复制分享链接</button><button onclick="window.print()">🖨 导出</button><span id="verify"></span></div>`;
+  $('#btnReset').addEventListener('click', reset);
+  $('#btnAgain').addEventListener('click', reset);
+
+  $('#btnCopyLink').addEventListener('click', () => {
+    if (!currentReport || !currentReport.id) { toast('报告还没落库'); return; }
+    copy(location.origin + location.pathname.replace(/\/$/, '') + '/report/' + currentReport.id);
+  });
+
+  $('#btnWatch').addEventListener('click', async () => {
+    if (!currentReport) return;
+    try {
+      await postJSON('./api/watch', { topic: currentReport.question, report_id: currentReport.id });
+      toast('已加入关注清单，证据有变化时会在站内提示');
+    } catch (e) { toast('加入失败'); }
+  });
+
+  // URL 里带 ?q= 时直接开跑，方便从 Benchmark 页跳转
+  const params = new URLSearchParams(location.search);
+  if (params.get('q')) {
+    $('#q').value = params.get('q');
+    if (params.get('mode')) MODE = params.get('mode');
+    run(params.get('q'));
   }
-  const mount=$("#reportMount")||$("#rmain");
-  mount.innerHTML=html;
-  if(meta && !streaming){
-    window._lastMeta=meta;
-    requestAnimationFrame(()=>paintKnowledgeGraph("#kgSvg", meta, false));
-  }
-}
-
-function kgShell(){
-  return `<div class="kg-box">
-    <div class="kg-legend">
-      <span><i style="background:#5b8cff"></i>报告</span>
-      <span><i style="background:#43d17f"></i>结论</span>
-      <span><i style="background:#e9b949"></i>证据</span>
-      <span><i style="background:#9d7bff"></i>实体</span>
-      <span style="margin-left:auto;opacity:.75">对齐 08 · 可拖拽 / 缩放</span>
-    </div>
-    <div class="kg-stage">
-      <button class="kg-fs" type="button" onclick="openKgFullscreen()">全屏图谱</button>
-      <svg id="kgSvg" class="kg-svg"></svg>
-      <div class="kg-tip">滚轮缩放 · 拖拽画布 · 拖动节点</div>
-    </div>
-  </div>`;
-}
-
-/** 从 meta 构建 报告→结论→证据 + 实体关系 网络（08 同构） */
-function buildKgData(meta){
-  const nodes=[], links=[];
-  const idset=new Set();
-  const add=(id,label,type,extra)=>{
-    if(!id||idset.has(id)) return;
-    idset.add(id);
-    nodes.push({id,label:String(label||id).slice(0,22),type,extra:extra||""});
-  };
-  const topic=(meta.topic||meta.overall&&meta.overall.verdict||"司南研判").slice(0,20);
-  add("report", topic, "report", meta.overall&&meta.overall.verdict||"");
-
-  (meta.experts||[]).slice(0,7).forEach((e,i)=>{
-    const id="claim_"+ (e.key||i);
-    add(id, e.name||("专家"+i), "claim", e.finding||e.stance||"");
-    links.push({source:"report", target:id, rel:"派遣"});
-  });
-  (meta.scenarios||[]).slice(0,4).forEach((s,i)=>{
-    const id="sc_"+i;
-    add(id, s.name||("情景"+i), "claim", ((s.probability!=null)?Math.round(s.probability*100)+"% ":"")+(s.basis||""));
-    links.push({source:"report", target:id, rel:"情景"});
-  });
-  (meta.signals||[]).slice(0,10).forEach((s,i)=>{
-    const id="ev_"+i;
-    add(id, s.name||("证据"+i), "evidence", [s.value,s.source,s.confidence].filter(Boolean).join(" · "));
-    // 挂到对应层或报告
-    const claims=nodes.filter(n=>n.type==="claim");
-    const tgt=claims[i%Math.max(claims.length,1)]||nodes[0];
-    links.push({source:tgt.id, target:id, rel:"证据"});
-  });
-  const entMap={};
-  (meta.entities||[]).slice(0,12).forEach((e,i)=>{
-    const name=e.name||e.id||("实体"+i);
-    const id="ent_"+name;
-    entMap[name]=id; entMap[e.id||""]=id;
-    add(id, name, "entity", e.type||"");
-    links.push({source:"report", target:id, rel:"涉及"});
-  });
-  (meta.relations||[]).forEach(r=>{
-    const a=entMap[r.from]||(idset.has("ent_"+r.from)?"ent_"+r.from:null);
-    const b=entMap[r.to]||(idset.has("ent_"+r.to)?"ent_"+r.to:null);
-    if(a&&b) links.push({source:a,target:b,rel:r.rel||"关联"});
-    else if(r.from&&r.to){
-      const ia="ent_"+r.from, ib="ent_"+r.to;
-      add(ia,r.from,"entity",""); add(ib,r.to,"entity","");
-      links.push({source:ia,target:ib,rel:r.rel||"关联"});
-    }
-  });
-  // 至少保证能画
-  if(nodes.length<2){ add("n1","信号","evidence",""); links.push({source:"report",target:"n1",rel:""}); }
-  return {nodes,links};
-}
-
-let _kgSim=null;
-function paintKnowledgeGraph(sel, meta, fullscreen){
-  if(typeof d3==="undefined") return;
-  const el=document.querySelector(sel); if(!el) return;
-  const {nodes,links}=buildKgData(meta||{});
-  const COLOR={report:"#5b8cff",claim:"#43d17f",evidence:"#e9b949",entity:"#9d7bff"};
-  const RADIUS={report:22,claim:14,evidence:9,entity:12};
-  if(_kgSim){try{_kgSim.stop()}catch(e){}}
-  d3.select(el).selectAll("*").remove();
-  const width=el.clientWidth||720, height=el.clientHeight||420;
-  const svg=d3.select(el).attr("viewBox",[0,0,width,height]);
-  const root=svg.append("g");
-  svg.call(d3.zoom().scaleExtent([0.35,2.8]).on("zoom",ev=>root.attr("transform",ev.transform)));
-
-  const sim=d3.forceSimulation(nodes)
-    .force("link", d3.forceLink(links).id(d=>d.id).distance(d=>{
-      const t=typeof d.target==="object"?d.target.type:null;
-      return t==="evidence"?70: t==="entity"?110: 130;
-    }).strength(0.7))
-    .force("charge", d3.forceManyBody().strength(-320))
-    .force("center", d3.forceCenter(width/2, height/2))
-    .force("collide", d3.forceCollide().radius(d=>RADIUS[d.type]+10));
-  _kgSim=sim;
-
-  const link=root.append("g").attr("stroke","#3a4a6a").attr("stroke-opacity",0.85)
-    .selectAll("line").data(links).join("line").attr("stroke-width",1.4);
-
-  const linkLabel=root.append("g").selectAll("text").data(links.filter(l=>l.rel)).join("text")
-    .text(d=>String(d.rel).slice(0,8))
-    .attr("font-size",9).attr("fill","#6b7a99").attr("text-anchor","middle");
-
-  const node=root.append("g").selectAll("g").data(nodes).join("g").style("cursor","pointer")
-    .call(d3.drag()
-      .on("start",(ev,d)=>{if(!ev.active)sim.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;})
-      .on("drag",(ev,d)=>{d.fx=ev.x;d.fy=ev.y;})
-      .on("end",(ev,d)=>{if(!ev.active)sim.alphaTarget(0);d.fx=null;d.fy=null;}));
-
-  node.append("circle")
-    .attr("r",d=>RADIUS[d.type])
-    .attr("fill",d=>COLOR[d.type])
-    .attr("fill-opacity",0.9)
-    .attr("stroke","#0a1120").attr("stroke-width",2);
-
-  node.append("text")
-    .text(d=>d.label)
-    .attr("x",d=>RADIUS[d.type]+5).attr("y",4)
-    .attr("font-size",d=>d.type==="report"?13:11)
-    .attr("fill","#dbe6ff");
-
-  node.append("title").text(d=>d.extra?`${d.label}\n${d.extra}`:d.label);
-
-  sim.on("tick",()=>{
-    link.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y)
-        .attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
-    linkLabel.attr("x",d=>(d.source.x+d.target.x)/2).attr("y",d=>(d.source.y+d.target.y)/2);
-    node.attr("transform",d=>`translate(${d.x},${d.y})`);
-  });
-}
-
-function openKgFullscreen(){
-  const m=$("#kgModal"); if(!m||!window._lastMeta) return;
-  m.classList.add("on");
-  requestAnimationFrame(()=>paintKnowledgeGraph("#kgModalSvg", window._lastMeta, true));
-}
-function closeKgFullscreen(){
-  const m=$("#kgModal"); if(m) m.classList.remove("on");
-  if(window._lastMeta) requestAnimationFrame(()=>paintKnowledgeGraph("#kgSvg", window._lastMeta, false));
-}
-
-async function openDemo(id){
-  $("#home").style.display="none";$("#result").style.display="block";window.scrollTo(0,0);
-  renderEminis();resetStream();$("#stream").style.display="none";
-  const d=await(await fetch("api/demo/"+id)).json();
-  $("#rq").textContent=d.question;setStep("done");document.querySelectorAll("#dag li").forEach(li=>li.classList.add("ok"));
-  const keys=(d.meta&&d.meta.experts||[]).map(e=>e.key);lightExperts(keys);setLive("示例报告已就绪");
-  $("#enginebadge").innerHTML='<span class="badge c">示例研判 · 预置证据链</span>';
-  if(d.taskId){$("#taskid").style.display="block";$("#taskid").textContent="taskId: "+d.taskId}
-  cur={id,question:d.question,markdown:d.markdown,meta:d.meta};
-  renderReport(d.question,d.markdown,d.meta,false);
-  $("#verify")&&($("#verify").innerHTML=d.share_url?`<a href="${d.share_url}" target="_blank">在 InfiniSynapse 核验 ↗</a>`:"");
-}
-
-function ask(){const q=$("#q").value.trim();if(q)analyze(q)}
-async function analyze(q){
-  $("#home").style.display="none";$("#result").style.display="block";window.scrollTo(0,0);
-  renderEminis();resetStream();
-  $("#rq").textContent=q;
-  $("#taskid").style.display="none";$("#enginebadge").innerHTML='<span class="badge m">研判进行中…</span>';
-  setStep("intake");setLive("正在唤醒司南…");
-  pushThought({kind:"plan",text:"收到问题，开始组建专家评审团…",step:"intake"});
-  const ctrl=new AbortController();window._c=ctrl;let md="",meta=null;
-  try{
-    const resp=await fetch("api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question:q}),signal:ctrl.signal});
-    const rd=resp.body.getReader(),dec=new TextDecoder();let buf="";
-    while(true){const {value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});
-      let parts=buf.split("\n\n");buf=parts.pop();
-      for(const p of parts){const line=p.split("\n").find(l=>l.startsWith("data:"));if(!line)continue;let ev;try{ev=JSON.parse(line.slice(5).trim())}catch(e){continue}
-        const {event,data}=ev;
-        if(event==="status"){if(data.step)setStep(data.step);if(data.message)setLive(data.message)}
-        else if(event==="thought"){pushThought(data)}
-        else if(event==="expert_on"){lightOne(data.key)}
-        else if(event==="experts"){lightExperts(data.keys||[])}
-        else if(event==="plan"){if(data.taskId){$("#taskid").style.display="block";$("#taskid").textContent="taskId: "+data.taskId}$("#enginebadge").innerHTML='<span class="badge c">联网取证中…</span>';setStep("collect");if(data.message)setLive(data.message)}
-        else if(event==="text"){setStep("analyze");setLive("首席研判官流式成文中…");md=data.markdown;renderReport(q,md,null,true);$("#enginebadge").innerHTML='<span class="badge m">综合成文中…</span>'}
-        else if(event==="done"){md=data.markdown;meta=data.meta;setStep("done");document.querySelectorAll("#dag li").forEach(li=>{li.classList.add("ok");li.classList.remove("act")});
-          const keys=(meta&&meta.experts||[]).map(e=>(e.key==="redteam"?"contra":e.key));lightExperts(keys);
-          $("#enginebadge").innerHTML=`<span class="badge g">✔ 研判完成</span>`;
-          setLive("研判完成");
-          pushThought({kind:"finding",text:"报告已生成。可批注深化或复制分享。",step:"done"});
-          cur={id:data.report_id,question:q,markdown:md,meta};renderReport(q,md,meta,false);
-          $("#verify")&&($("#verify").innerHTML=data.share_url?`<a href="${data.share_url}" target="_blank">公开核验链接 ↗</a>`:"");}
-        else if(event==="error"){setLive("失败");pushThought({kind:"reflect",text:"司南沉默了："+(data.message||""),step:"analyze"});$("#reportMount").innerHTML='<div class="block"><div style="color:var(--red)">司南沉默了：'+esc(data.message)+'</div></div>'}
-      }
-    }
-  }catch(e){if(e.name==="AbortError")return;setLive("失败");$("#reportMount").innerHTML='<div class="block"><div style="color:var(--red)">研判失败：'+esc(e.message)+'</div></div>'}
-}
-
-async function deepen(){
-  const a=$("#anno").value.trim();if(!a)return;const out=$("#deepout");out.innerHTML='<span class="muted">司南正在顺着你的批注再深挖…</span>';
-  try{const r=await(await fetch("api/deepen",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({report_id:cur.id,annotation:a,section:cur.markdown?cur.markdown.slice(0,1500):""})})).json();
-    if(r.markdown){out.innerHTML='<div style="border-left:3px solid var(--cyan);padding-left:12px;margin-top:6px">'+marked.parse(r.markdown)+'</div>'}else{out.innerHTML='<span style="color:var(--red)">'+esc(r.error||'深化失败')+'</span>'}
-  }catch(e){out.innerHTML='<span style="color:var(--red)">'+esc(e.message)+'</span>'}
-}
-function copyLink(){if(!cur.id)return;const u=location.origin+location.pathname.replace(/\/$/,'')+"/report/"+cur.id;navigator.clipboard.writeText(u);event.target.textContent="✔ 已复制";setTimeout(()=>event.target.textContent="🔗 复制分享链接",1500)}
-
-chips();loadCaps();loadDemos();
-$("#q").addEventListener("keydown",e=>{if(e.key==="Enter")ask()});
+})();
 </script>
 </body>
 </html>

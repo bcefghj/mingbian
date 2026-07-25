@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Benchmark · 明辨 MINGBIAN</title>
+<script>
+(function () {
+  var b = location.pathname.replace(/(report|trace|graph)\/[^/]*$/, '')
+    .replace(/(dashboard|experts|ledger|bench|about)\/?$/, '');
+  if (b.slice(-1) !== '/') b += '/';
+  document.write('<base href="' + b + '">');
+})();
+</script>
+<link rel="icon" href="./static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./static/mb.css">
+</head>
+<body>
+<header id="topbar"></header>
+<div class="wrap-wide" style="padding-top:24px">
+  <div class="page-head" style="padding-top:0">
+    <h1>Case Benchmark</h1>
+    <p>单个 demo 跑得漂亮说明不了什么，可能只是碰巧。所以我们固定了 10 道研判题，
+      每次改动都重跑一遍，记录覆盖率、无证据结论占比、一次过检率与耗时——
+      用数字证明这一版比上一版好。</p>
+  </div>
+
+  <div class="grid grid-4" id="top"></div>
+
+  <section class="mt28">
+    <div class="row-between mb12"><h2 class="fs20">迭代曲线</h2>
+      <span class="t4 fs12" id="curveNote"></span></div>
+    <div class="card"><div id="curve"></div></div>
+  </section>
+
+  <section class="mt28">
+    <div class="row-between mb12"><h2 class="fs20">题集</h2>
+      <span class="t4 fs12">点「跑一次」会用当前版本重新研判，结果写回曲线</span></div>
+    <div class="grid grid-2" id="cases"></div>
+  </section>
+</div>
+<footer id="footer"></footer>
+
+<script src="./static/mb-core.js"></script>
+<script>
+(function () {
+  const { $, esc, getJSON, pct, fmtTime } = MB;
+  MB.mountTopbar('Benchmark');
+  MB.mountFooter();
+
+  getJSON('./api/bench').then(d => {
+    const curve = d.curve || [], cases = d.cases || [], latest = d.latest || {};
+
+    const last = curve[curve.length - 1] || {};
+    $('#top').innerHTML = [
+      ['累计跑题', d.total_runs || 0, `覆盖 ${Object.keys(latest).length} / ${cases.length} 道`],
+      ['平均独立来源', last.avg_domains != null ? last.avg_domains : '—', '最新版本'],
+      ['无证据结论占比', last.unsupported_ratio != null ? pct(last.unsupported_ratio) : '—', '越低越好'],
+      ['一次过检率', last.first_pass_rate != null ? pct(last.first_pass_rate) : '—', '不需返工的比例'],
+    ].map(([k, v, dsc]) =>
+      `<div class="card"><div class="stat"><span class="v">${esc(String(v))}</span>` +
+      `<span class="k">${esc(k)}</span><span class="d">${esc(dsc)}</span></div></div>`).join('');
+
+    if (!curve.length) {
+      $('#curve').innerHTML = `<div class="empty">还没有 Benchmark 记录。` +
+        `跑几道题（下方点「跑一次」），这里就会画出版本曲线。</div>`;
+    } else {
+      $('#curveNote').textContent = `${curve.length} 个版本 · ${d.total_runs} 次运行`;
+      $('#curve').innerHTML = spark(curve);
+    }
+
+    $('#cases').innerHTML = cases.map(c => {
+      const l = latest[c.id];
+      return `<div class="card"><div class="row-between mb8">` +
+        `<span class="tag tag-accent">${esc(c.domain)}</span>` +
+        `<a class="btn btn-sm" href="./?q=${encodeURIComponent(c.q)}&mode=deep">跑一次 →</a></div>` +
+        `<div class="t1 fs14" style="line-height:1.6">${esc(c.q)}</div>` +
+        `<div class="t4 fs12 mt8">难点：${esc(c.hard)}</div>` +
+        (l ? `<div class="inset mt12 fs12 t3">` +
+          `<div class="row wrapflex" style="gap:12px">` +
+          `<span>证据 <b class="mono t2">${l.evidence_count}</b></span>` +
+          `<span>独立源 <b class="mono t2">${l.independent_domains}</b></span>` +
+          `<span>无证据占比 <b class="mono t2">${pct(l.unsupported_ratio)}</b></span>` +
+          `<span>返工 <b class="mono t2">${l.rework_rounds}</b> 轮</span>` +
+          `<span>${(l.elapsed_ms / 1000).toFixed(1)}s</span></div>` +
+          (l.report_id ? `<a class="fs11 mt4" style="display:inline-block" href="./report/${esc(l.report_id)}">看这次的报告 →</a>` : '') +
+          `</div>`
+          : `<div class="t4 fs12 mt12">这道题还没跑过。</div>`) +
+        `</div>`;
+    }).join('');
+  }).catch(() => {
+    $('#curve').innerHTML = '<div class="empty">读取失败。</div>';
+  });
+
+  /* 用纯 SVG 画多序列折线，不引外部图表库 */
+  function spark(curve) {
+    const series = [
+      { key: 'avg_domains', label: '平均独立来源', color: '#5b9cf8', scale: 12 },
+      { key: 'bound_ratio', label: '论点绑证据率', color: '#47b881', scale: 1 },
+      { key: 'unsupported_ratio', label: '无证据结论占比', color: '#e0645f', scale: 1 },
+      { key: 'first_pass_rate', label: '一次过检率', color: '#a583f0', scale: 1 },
+    ];
+    const W = 900, H = 240, P = 34;
+    const n = curve.length;
+    const x = i => P + (n === 1 ? (W - 2 * P) / 2 : i * (W - 2 * P) / (n - 1));
+    const y = v => H - P - Math.max(0, Math.min(1, v)) * (H - 2 * P);
+
+    const grid = [0, .25, .5, .75, 1].map(g =>
+      `<line x1="${P}" y1="${y(g)}" x2="${W - P}" y2="${y(g)}" stroke="#1e2128" stroke-width="1"/>` +
+      `<text x="${P - 8}" y="${y(g) + 4}" text-anchor="end" fill="rgba(233,237,243,.45)" font-size="10">${Math.round(g * 100)}</text>`
+    ).join('');
+
+    const paths = series.map(s => {
+      const pts = curve.map((c, i) => `${x(i)},${y((c[s.key] || 0) / s.scale)}`);
+      const dots = curve.map((c, i) =>
+        `<circle cx="${x(i)}" cy="${y((c[s.key] || 0) / s.scale)}" r="3" fill="${s.color}"/>`).join('');
+      return `<polyline points="${pts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="1.8"/>` + dots;
+    }).join('');
+
+    const labels = curve.map((c, i) =>
+      `<text x="${x(i)}" y="${H - 12}" text-anchor="middle" fill="rgba(233,237,243,.45)" font-size="10">${esc(c.version)}</text>`
+    ).join('');
+
+    const legend = series.map(s =>
+      `<span class="t4 fs11"><span style="color:${s.color}">●</span> ${s.label}` +
+      (s.scale !== 1 ? `（÷${s.scale}）` : '') + `</span>`).join('');
+
+    return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:${H}px">${grid}${paths}${labels}</svg>` +
+      `<div class="row wrapflex mt8" style="gap:16px">${legend}</div>`;
+  }
+})();
+</script>
+</body>
+</html>
