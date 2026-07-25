@@ -109,9 +109,51 @@ def merge_llm_review(q: Quality, raw: str) -> Quality:
     q.review = str(j.get("review", ""))[:300]
     if j.get("verdict") == "rework":
         q.verdict = "rework"
-    if any(int(v) < 60 for v in q.scores.values() if isinstance(v, (int, float))):
+    # 只有「再跑一轮真能补上」的维度低分才判返工。
+    # 交叉验证率取决于世上到底存不存在第二个独立来源——打回去重写并不能
+    # 把来源变出来，硬卡这一项只会白烧一轮算力，然后仍然不达标。
+    # 它低于 60 时记一条问题留在报告里，但不作为返工触发条件。
+    reworkable = ("evidence_sufficiency", "dimension_completeness",
+                  "conclusion_confidence", "structure_integrity")
+    if any(int(q.scores.get(k, 100)) < 60 for k in reworkable):
         q.verdict = "rework"
+    if int(q.scores.get("cross_validation", 100)) < 60:
+        q.issues.append(Issue(
+            target="dimension:交叉验证", severity="low", raised_by="rules",
+            reason=f"交叉验证率仅 {q.scores.get('cross_validation')}%，"
+                   f"多数论点只有单一独立来源。这受限于公开可检索到的来源数量，"
+                   f"不作返工处理，但请据此调低对这份报告的信任度。").to_dict())
     return q
+
+
+def meets_hard_bar(q: Quality) -> bool:
+    """硬指标是否达标。
+
+    这条线全部由代码算，不看质检官的主观评语：证据得有量、来源得散开、
+    维度得覆盖到、可返工的评分维不低于 60。达到了就允许出报告，
+    质检官剩下的意见以「保留意见」的形式附在报告里，而不是无限期否决——
+    否则只要模型愿意一直挑刺，任何报告都永远出不来。
+
+    未绑证论点允许少量存在：模型有时会把「诚实缺口」也写成论点
+    （例如「该公司未披露 ARR，无法评估」），这类句子本就不该绑证据。
+    只要整体绑证率仍高，就不该永久卡死出报告。
+    """
+    reworkable = ("evidence_sufficiency", "dimension_completeness",
+                  "conclusion_confidence", "structure_integrity")
+    if q.claim_count <= 0:
+        unbound_ok = False
+    elif q.unsupported_claims == 0:
+        unbound_ok = True
+    else:
+        ratio = q.unsupported_claims / q.claim_count
+        bound = q.evidence_bound_ratio if q.evidence_bound_ratio else (
+            1.0 - ratio)
+        unbound_ok = ratio <= 0.3 and bound >= 0.7
+    return (unbound_ok
+            and q.evidence_count >= 6
+            and q.independent_domains >= 4
+            and q.dimension_coverage >= 0.7
+            and all(int(q.scores.get(k, 0)) >= 60 for k in reworkable))
 
 
 def route_rework(q: Quality) -> tuple[str | None, list[dict]]:

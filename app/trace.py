@@ -52,6 +52,12 @@ class Recorder:
         self.events: list[dict] = []
         self.counters: Counter = Counter()
         self.alerts: list[dict] = []
+        # 一次研判会打好几次引擎（成文、质检、返工、辩论各算一次），
+        # 每次都有自己的 taskId。只记最后一次，台账就漏掉了大半条链路。
+        self.calls: list[dict] = []
+        # 主引擎顶不住时退到备用通道。这件事要一路带到报告里，
+        # 让看报告的人知道这份结论是在什么条件下产出的。
+        self.degraded: dict | None = None
         self._seq = 0
         self._eid = 0
         self.started = time.time()

@@ -24,7 +24,44 @@
       所以这里每一格都能点开看它是怎么算的，以及它<b class="t2">不能</b>说明什么。</p>
   </div>
 
-  <div class="grid grid-4" id="top"></div>
+  <div class="statband" id="top"></div>
+
+  <section class="mt28">
+    <div class="grid grid-2">
+      <div class="card">
+        <div class="card-title">证据都来自哪里</div>
+        <div id="domains" class="col" style="gap:7px"></div>
+        <div class="t4 fs11 mt12">按根域名归并，子域名不重复计数——不然一个站点换几个二级域名
+          就能把「独立来源数」刷上去。</div>
+      </div>
+      <div class="card">
+        <div class="card-title">编排真实发生过什么</div>
+        <div id="orch" class="col" style="gap:7px"></div>
+        <div class="t4 fs11 mt12">这几行是判断「多智能体」是不是噱头的地方：
+          没有返工、没有辩论、没有未解张力，那就只是把一次问答拆成了七个进度条。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mt28">
+    <div class="card">
+      <div class="card-title">领域覆盖</div>
+      <div id="tags" class="row wrapflex" style="gap:8px"></div>
+      <div class="t4 fs11 mt12">按已落库研判的领域标签统计。覆盖面窄不是缺陷，
+        但拿它去声称「通用」就是了。</div>
+    </div>
+  </section>
+
+  <section class="mt28">
+    <div class="row-between mb12"><h2 class="fs20">待观测的触发条件</h2>
+      <span class="t4 fs12">结论是有保质期的</span></div>
+    <div class="card">
+      <div id="triggers" class="grid grid-2" style="gap:10px"></div>
+      <div class="t4 fs11 mt12">每份报告都写明了「出现什么情况就要回来重判」。
+        散在各自报告里没人会挨份翻，所以在这里汇总——条件成立那天，
+        对应的结论就该作废重跑，而不是继续被引用。</div>
+    </div>
+  </section>
 
   <section class="mt28">
     <div class="row-between mb12"><h2 class="fs20">指标口径</h2>
@@ -70,15 +107,52 @@
   MB.mountFooter();
 
   getJSON('./api/dashboard').then(d => {
-    const l = d.ledger || {}, rv = d.reviews || {};
+    const l = d.ledger || {}, rv = d.reviews || {}, c = d.corpus || {};
     $('#top').innerHTML = [
-      ['累计研判', d.reports || 0, '份报告已落库'],
-      ['Infini 调用', l.infini_calls || 0, '每次都带真实 taskId'],
-      ['平均耗时', ((l.avg_elapsed_ms || 0) / 1000).toFixed(1) + 's', '含取证与返工'],
-      ['人工复核', rv.reviewed || 0, `${rv.confirmed || 0} 已核实 / ${rv.doubted || 0} 存疑 / ${rv.rejected || 0} 驳回`],
+      [c.documents || 0, '份研判已落库', `示例 + 用户实跑，全部逐份重算`],
+      [c.evidence_total || 0, '条已核验证据', `平均每份 ${c.evidence_avg || 0} 条`],
+      [c.independent_domains || 0, '个独立来源域', `平均可信度 ${c.avg_credibility || 0}`],
+      [c.claims_total || 0, '条论点', `${Math.round((c.bound_ratio || 0) * 100)}% 绑定了证据`],
+      [l.total_calls || 0, '次引擎调用', `平均每次研判 ${l.calls_per_run || 0} 打`],
+      [c.redteam_total || 0, '条红队反方', `另有 ${c.gaps_total || 0} 条证据缺口如实写明`],
+    ].map(([v, k, dsc]) =>
+      `<div class="statcell"><b>${esc(String(v))}</b>` +
+      `<span class="k">${esc(k)}</span><span class="d">${esc(dsc)}</span></div>`).join('');
+
+    const dom = c.top_domains || [];
+    const dmax = Math.max(1, ...dom.map(x => x.count));
+    $('#domains').innerHTML = dom.length ? dom.slice(0, 10).map(x =>
+      `<div class="row" style="gap:10px;align-items:center">` +
+      `<span class="mono fs11 t3" style="width:132px;flex:none">${esc(x.domain)}</span>` +
+      `<span class="bar grow"><i style="width:${Math.round(x.count / dmax * 100)}%"></i></span>` +
+      `<b class="mono fs11 t2" style="width:26px;text-align:right;flex:none">${x.count}</b></div>`).join('')
+      : `<div class="t4 fs12">还没有证据入库。</div>`;
+
+    const pct = v => Math.round((v || 0) * 100) + '%';
+    $('#orch').innerHTML = [
+      ['质检返工', `${c.rework_rounds || 0} 轮`, `${pct(c.rework_ratio)} 的研判被打回重做过`],
+      ['辩论门控', `${c.debate_held || 0} 次开辩`, `门控评估 ${c.debate_gated || 0} 次，开辩率 ${pct(c.debate_open_ratio)}`],
+      ['未解张力', `${c.tensions_total || 0} 组`, '证据互斥且没能调和，原样摆出来'],
+      ['证据缺口', `${c.gaps_total || 0} 条`, '公开渠道查不到、明确写进报告的空白'],
+      ['红队反方', `${c.redteam_total || 0} 条`, '专职证伪产出的反面意见'],
+      ['强论点占比', pct(c.strong_ratio), '有多源交叉验证支撑的论点比例'],
     ].map(([k, v, dsc]) =>
-      `<div class="card"><div class="stat"><span class="v">${esc(String(v))}</span>` +
-      `<span class="k">${esc(k)}</span><span class="d">${esc(dsc)}</span></div></div>`).join('');
+      `<div class="row-between" style="align-items:baseline;gap:12px">` +
+      `<span class="fs12 t3" style="flex:none;width:76px">${esc(k)}</span>` +
+      `<b class="fs14 t1 mono" style="flex:none">${esc(v)}</b>` +
+      `<span class="t4 fs11" style="text-align:right">${esc(dsc)}</span></div>`).join('');
+
+    const tg = d.triggers || [];
+    $('#triggers').innerHTML = tg.length ? tg.map(t =>
+      `<div class="inset"><div class="t2 fs12" style="line-height:1.7">${esc(t.text)}</div>` +
+      `<div class="row mt8" style="gap:6px;align-items:center">` +
+      (t.tag ? `<span class="tag fs11">${esc(t.tag)}</span>` : '') +
+      `<a class="t4 fs11" href="./report/${esc(t.report_id)}">${esc(t.question)} →</a></div></div>`).join('')
+      : `<div class="t4 fs12">还没有报告写下触发条件。</div>`;
+
+    $('#tags').innerHTML = (c.tags || []).length
+      ? c.tags.map(t => `<span class="tag">${esc(t.tag)} <b class="t1">${t.count}</b></span>`).join('')
+      : `<div class="t4 fs12">还没有领域标签。</div>`;
 
     const defs = d.definitions || {};
     $('#defs').innerHTML = Object.keys(defs).map(k => {

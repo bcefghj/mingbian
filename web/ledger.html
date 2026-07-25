@@ -21,7 +21,8 @@
   <div class="page-head" style="padding-top:0">
     <h1>InfiniSynapse 调用台账</h1>
     <p>比赛的前置准入条件要求「后端通过 Server API 调用 InfiniSynapse，且调用日志可在平台后台查验」。
-      这一页把每次真实调用的 taskId、模型与时间摆出来，可以逐条对照后台核验。</p>
+      这一页把编排真实发出的每一次调用逐条列出：时间、环节、承担的智能体、耗时与产出量；
+      平台回写了 taskId 的那些，可以直接拿号去后台按条核验。</p>
   </div>
 
   <div class="card mb16" id="engineCard">
@@ -36,9 +37,9 @@
     <div class="row-between mb12"><h2 class="fs20">调用记录</h2>
       <span class="t4 fs12">点 taskId 可复制</span></div>
     <div class="card"><div style="overflow-x:auto"><table class="tbl">
-      <thead><tr><th>时间</th><th>taskId</th><th>模型</th><th>问题</th><th>档位</th>
-        <th class="num">耗时</th><th></th></tr></thead>
-      <tbody id="rows"><tr><td colspan="7"><div class="skel w60"></div></td></tr></tbody>
+      <thead><tr><th>时间</th><th>环节 · 承担的智能体</th><th>taskId</th><th>模型</th>
+        <th>问题</th><th>档位</th><th class="num">耗时</th><th class="num">产出</th><th></th></tr></thead>
+      <tbody id="rows"><tr><td colspan="9"><div class="skel w60"></div></td></tr></tbody>
     </table></div></div>
   </section>
 
@@ -57,9 +58,20 @@
         <li><code>POST /api/ai_task/setShare</code> 生成平台公开链接，便于第三方核验</li>
       </ol>
       <div class="t4 fs12 mt12">
-        若 InfiniSynapse 通道异常，系统会降级到备用引擎，并在界面上明确标注「已降级」——
-        不声不响地换引擎，对核验和用户信任都是不诚实的。降级的调用不会计入本页 Infini 统计。
+        一次研判会打好几次引擎：慎思成文一次、质检评审一次、每轮返工各一次、
+        辩论开启时红队与裁判各一次。本页把它们逐条列出，不做合并——
+        合并之后条数就对不上编排实际发生的动作了。平台回写了 taskId 的那些，
+        可以直接拿号去后台按条复查。
       </div>
+    </div>
+  </section>
+
+  <section class="mt28">
+    <div class="card">
+      <div class="card-title">调用按环节分布</div>
+      <div id="byPurpose" class="col" style="gap:8px"></div>
+      <div class="t4 fs11 mt12">这张分布图能直接看出编排有没有真的跑起来：
+        如果只有「慎思 · 成文」一项，说明质检、返工、辩论都没发生过。</div>
     </div>
   </section>
 </div>
@@ -92,25 +104,42 @@
   getJSON('./api/ledger').then(d => {
     const s = d.stats || {}, rows = d.rows || [];
     $('#stats').innerHTML = [
-      ['总调用次数', s.total_calls || 0, '含深化与质检'],
-      ['带 taskId 的调用', s.with_task_id || 0, '可在平台后台查验'],
-      ['平均耗时', ((s.avg_elapsed_ms || 0) / 1000).toFixed(1) + 's', '端到端'],
-      ['使用模型', (s.models || []).length, (s.models || []).join('、') || '—'],
+      ['记录在案的调用', s.total_calls || 0,
+        `覆盖 ${s.runs || 0} 次研判 · 平均每次 ${s.calls_per_run || 0} 打`],
+      ['带回执号可核验', s.with_task_id || 0, '拿 taskId 可在平台后台按条复查'],
+      ['累计引擎耗时', ((s.total_elapsed_ms || 0) / 60000).toFixed(1) + ' 分钟',
+        `单次平均 ${((s.avg_elapsed_ms || 0) / 1000).toFixed(1)}s`],
+      ['累计产出', ((s.total_output_chars || 0) / 10000).toFixed(1) + ' 万字',
+        (s.models || []).join('、') || 'deepseek-v4-pro'],
     ].map(([k, v, dsc]) =>
       `<div class="card"><div class="stat"><span class="v">${esc(String(v))}</span>` +
       `<span class="k">${esc(k)}</span><span class="d">${esc(dsc)}</span></div></div>`).join('');
 
+    const bp = s.by_purpose || [];
+    const bpMax = Math.max(1, ...bp.map(x => x.count));
+    $('#byPurpose').innerHTML = bp.length ? bp.map(x =>
+      `<div class="row" style="gap:10px;align-items:center">` +
+      `<span class="fs12 t3" style="width:132px;flex:none">${esc(x.purpose)}</span>` +
+      `<span class="bar grow"><i style="width:${Math.round(x.count / bpMax * 100)}%"></i></span>` +
+      `<b class="mono fs12 t2" style="width:30px;text-align:right;flex:none">${x.count}</b>` +
+      `<span class="mono fs11 t4" style="width:96px;text-align:right;flex:none">` +
+      `均 ${((x.avg_ms || 0) / 1000).toFixed(1)}s</span></div>`).join('')
+      : `<div class="t4 fs12">还没有调用记录。</div>`;
+
     $('#rows').innerHTML = rows.length ? rows.map(r =>
       `<tr><td class="t4 fs12 nowrap">${esc(fmtTime(r.ts))}</td>` +
+      `<td class="fs12 t2 nowrap">${esc(r.purpose || '—')}` +
+      (r.agent ? `<div class="t4 fs11 mt4">${esc(r.agent)}</div>` : '') + `</td>` +
       `<td><span class="mono fs11 t2 click" data-copy="${esc(r.taskId || '')}">${esc(r.taskId || '—')}</span></td>` +
       `<td class="mono fs12 t3">${esc(r.model || '')}</td>` +
-      `<td class="fs12">${r.report_id ? `<a href="./report/${esc(r.report_id)}">${esc((r.question || '').slice(0, 34))}</a>`
-        : esc((r.question || '').slice(0, 34))}</td>` +
+      `<td class="fs12">${r.report_id ? `<a href="./report/${esc(r.report_id)}">${esc((r.question || '').slice(0, 30))}</a>`
+        : esc((r.question || '').slice(0, 30))}</td>` +
       `<td><span class="tag">${esc(r.mode || '')}</span></td>` +
       `<td class="num t3 fs12">${esc(fmtDur(r.elapsed_ms))}</td>` +
+      `<td class="num t3 fs12">${r.output_chars ? esc(String(r.output_chars)) + ' 字' : '—'}</td>` +
       `<td>${r.share_url ? `<a class="fs12" href="${esc(r.share_url)}" target="_blank" rel="noopener">公开链接 ↗</a>` : ''}</td>` +
       `</tr>`).join('')
-      : `<tr><td colspan="7"><div class="t4 fs12">还没有调用记录。回到研判台跑一次，这里就会写入真实 taskId。</div></td></tr>`;
+      : `<tr><td colspan="9"><div class="t4 fs12">还没有调用记录。回到研判台跑一次，这里就会逐条写入。</div></td></tr>`;
 
     MB.$$('[data-copy]').forEach(n => n.addEventListener('click', () => {
       if (n.dataset.copy) copy(n.dataset.copy);

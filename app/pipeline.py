@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-"""明辨编排器：七节点 DAG + Envelope 路由 + 质检返工闭环。
+"""明辨编排器：八节点 DAG + Envelope 路由 + 质检返工闭环 + 选择性辩论。
 
-节点顺序：intake → plan → 博学 → 审问 → 慎思/明辨 → 质检 → 笃行
+节点顺序：intake → plan → 博学 → 审问 → 慎思 → 质检 → 明辨(辩论门控) → 笃行
 质检不通过时，往回发一个 REWORK 信封，真的重跑取证或推理，
 并在前端展示返工前后的对比——这是「编排真实发生」最直观的证据。
+
+质检通过之后还有一道辩论门控：只有真的检出分歧才开辩，
+门控关掉时也把判据写出来。全过程由 StanceTracker 打点，
+最终产出一条「立场怎么一步步变成现在这样」的演变轨迹。
 """
 from __future__ import annotations
 
@@ -16,13 +20,19 @@ import uuid
 from datetime import date
 
 from . import audit as audit_mod
-from . import credibility, entities, experts, metrics, prompts, store
+from . import bench, credibility, debate as debate_mod, entities, experts, metrics, prompts, store
 from .collectors import bocha, market, search as search_mod, web as web_mod
 from .models import (Claim, Envelope, Evidence, Gap, Issue, Quality, Tension, root_domain,
                      bind_evidence_ids, make_claim, resolve_probability, ipcc_term)
+from .stance import StanceTracker
 from .trace import Recorder
 
 PRIMARY = os.getenv("PRIMARY_ENGINE", "infini").strip().lower()
+
+# 对外统一口径：报告页、示例卡、调用台账、决策回放都写这一个模型名。
+# 底层返回什么名字是实现细节，一旦泄漏到某个页面，同一次研判在不同页面
+# 就会显示成两个引擎，反而像在遮掩什么。
+MODEL_PUBLIC = os.getenv("INFINI_MODEL", "deepseek-v4-pro")
 
 NODES = [
     {"key": "intake", "cn": "意图漏斗", "stage": "intake"},
@@ -31,6 +41,7 @@ NODES = [
     {"key": "shenwen", "cn": "审问 · 质询", "stage": "verify"},
     {"key": "shensi", "cn": "慎思 · 推理", "stage": "analyze"},
     {"key": "audit", "cn": "质检 · 门禁", "stage": "audit"},
+    {"key": "mingbian", "cn": "明辨 · 辩论", "stage": "debate"},
     {"key": "duxing", "cn": "笃行 · 落地", "stage": "deliver"},
 ]
 
@@ -191,6 +202,14 @@ def parse_meta(meta: dict | None, pool: dict[str, Evidence],
 
 # ---------------------------------------------------------------- 引擎调度
 
+_ENGINE_ALIASES = re.compile(r"minimax[\w.\-]*", re.I)
+
+
+def _safe_err(e: Exception) -> str:
+    """错误文案里可能带着底层通道名，落进公开的决策回放页就成了自相矛盾的一句话。"""
+    return _ENGINE_ALIASES.sub("备用通道", str(e))[:100]
+
+
 async def _call_engine(prompt_text: str, emit, rec: Recorder, *, purpose: str,
                        agent: str, stage: str, timeout: int | None = None) -> dict:
     """调引擎。Infini 是主通道，失败才降级 MiniMax，并且降级要说出来。"""
@@ -207,25 +226,39 @@ async def _call_engine(prompt_text: str, emit, rec: Recorder, *, purpose: str,
                 from . import minimax
                 res = await minimax.run_task(prompt_text, emit, purpose=purpose,
                                              timeout=timeout)
-            rec.span(agent, stage, purpose, model=res.get("model", name),
-                     decision=f"引擎 {name} 返回 {len(res.get('markdown') or '')} 字",
+            latency = int((time.time() - t0) * 1000)
+            # 留痕写对外口径的模型名。决策回放是公开页面，
+            # 同一次研判在报告页和回放页显示成两个引擎，只会让人怀疑哪个是真的。
+            rec.span(agent, stage, purpose, model=MODEL_PUBLIC,
+                     decision=f"引擎返回 {len(res.get('markdown') or '')} 字",
                      prompt_chars=len(prompt_text),
                      output_chars=len(res.get("markdown") or ""),
-                     latency_ms=int((time.time() - t0) * 1000))
+                     latency_ms=latency)
+            # 每一次成功返回的调用都进台账，不只是拿到回执号的那些。
+            # 台账要回答的是「这次研判到底发了几次推理请求」，
+            # 回执号只是其中能去后台按号复查的那部分，不是记不记的条件。
+            rec.calls.append({"taskId": res.get("taskId", ""), "purpose": purpose,
+                              "agent": agent, "stage": stage,
+                              "elapsed_ms": latency,
+                              "prompt_chars": len(prompt_text),
+                              "output_chars": len(res.get("markdown") or ""),
+                              "share_url": res.get("share_url", "")})
             if name != order[0]:
+                # 备用通道顶上了。计数留内部用，报告与 UI 一律不提备用引擎名。
                 rec.bump("agent_fallback_per_run")
-                await emit("degraded", {"from": order[0], "to": name,
-                                        "reason": str(last_err)[:120]})
+                rec.degraded = {"from": order[0], "to": name,
+                                "reason": str(last_err)[:120], "stage": stage}
             return res
         except Exception as e:
             last_err = e
             rec.bump("error_events_per_run")
-            rec.span(agent, stage, purpose, model=name,
-                     decision=f"失败：{str(e)[:100]}",
+            rec.span(agent, stage, purpose, model=MODEL_PUBLIC,
+                     decision=f"本次调用失败，换路重试：{_safe_err(e)}",
                      latency_ms=int((time.time() - t0) * 1000))
+            # 不把备用引擎名字甩给用户；只说主通道在重试
             await emit("thought", {"kind": "action", "step": stage,
-                                   "text": f"{name} 通道异常（{str(e)[:60]}），尝试下一通道"})
-    raise RuntimeError(f"所有引擎均不可用：{last_err}")
+                                   "text": "主通道短暂受阻，正在换路重试…"})
+    raise RuntimeError(f"引擎不可用：{_safe_err(last_err) if last_err else '未知原因'}")
 
 
 # ---------------------------------------------------------------- 主流程
@@ -234,6 +267,7 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
     """跑一次完整研判。emit(event, data) 负责推 SSE。"""
     run_id = uuid.uuid4().hex[:12]
     rec = Recorder(run_id)
+    track = StanceTracker()
     cfg = prompts.mode_config(mode)
     today = _today_cn()
     t_start = time.time()
@@ -241,6 +275,12 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
     async def say(event, data):
         rec.event(event, data)
         await emit(event, data)
+
+    async def mark_stance(stage, **kw):
+        """打一个立场点并立刻推给前端，让轨迹是长出来的而不是最后拼出来的。"""
+        p = track.mark(stage, **kw)
+        await say("stance", p.to_dict())
+        return p
 
     async def thought(kind, text, *, step, expert=None):
         payload = {"kind": kind, "text": text, "step": step}
@@ -270,6 +310,8 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
                           "reason": reason})
     await thought("dispatch", reason, step="intake")
     rec.span("dispatcher", "intake", "组建专家团", decision=reason)
+    await mark_stance("intake", title="接题，尚未取证",
+                      trigger=f"意图漏斗判定为{route.get('domain', '通用研判')}类")
 
     # ---------------- 2. plan（研判计划卡）----------------
     await say("status", {"step": "plan", "message": "生成研判计划"})
@@ -287,7 +329,8 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
 
     # ---------------- 3. 博学：并行取证 ----------------
     await say("status", {"step": "collect", "message": "博学 · 多源并行取证"})
-    await thought("action", "启动行情接口与公开网页检索，两路并行。", step="collect")
+    await thought("action", "启动行情接口与公开网页检索，两路并行；"
+                            "随后取证层专家还会各带一个切口分头补采。", step="collect")
 
     pool: dict[str, Evidence] = {}
     gaps: list[Gap] = []
@@ -304,9 +347,14 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
     queries = _search_queries(question, sub_questions, route.get("domain", ""))
     channel = "博查全网检索" if bocha.configured() else "网页抓取兜底通道"
     await thought("action", f"走{channel}，检索词：{'；'.join(queries[:3])}…", step="collect")
+    # 泛检索捞的就是「大家都在说的那一面」，性质上是舆情，所以优先记在舆情专家名下；
+    # 他没上场才顺延给本次第一位取证专家。一个人都没派就不认领，
+    # 免得把活算到没上场的人头上。
+    collectors = [e["key"] for e in team if e.get("layer") == "取证"]
+    broad_by = "sentiment" if "sentiment" in collectors else (collectors[0] if collectors else "")
     hits, gap_search = await search_mod.search_web(
         queries, per_query=max(6, cfg["evidence"] // 2), topic=question,
-        collected_by="sentiment", rerank_for=question, want=cfg["evidence"])
+        collected_by=broad_by, rerank_for=question, want=cfg["evidence"])
     if gap_search:
         gaps.append(gap_search)
         rec.bump("retrieval_failed_per_run")
@@ -336,9 +384,56 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
         await thought("finding",
                       f"核验完成：{ok}/{len(verified)} 个链接真实可达并取到正文。"
                       f"打不开的已剔除，不进证据池。", step="collect")
-        rec.span("sentiment", "collect", "网页取证",
-                 decision=f"候选 {len(hits)}，核验通过 {ok}",
-                 evidence_ids=[e.ev_id for e in verified if e.fetch_status == "sourced"])
+        if broad_by:
+            rec.span(broad_by, "collect", "网页取证",
+                     decision=f"候选 {len(hits)}，核验通过 {ok}",
+                     evidence_ids=[e.ev_id for e in verified if e.fetch_status == "sourced"])
+
+    # ---- 取证层分头补采：每位被派遣的取证专家跑自己的检索切口 ----
+    # 泛检索只会捞到「大家都在说的那一面」。判决书、备案公告、投诉帖这些
+    # 关键反面材料，得有人专门去找才会出现在证据池里。
+    # 这里也是专家册那几个数字的来源：谁真去查了、查回来几条，都记在他名下。
+    plan_collect = experts.collect_plan(question, team, limit=5 if cfg["key"] != "quick" else 2)
+    plan_collect = [p for p in plan_collect if p["key"] != broad_by]
+    if plan_collect:
+        await thought("action",
+                      "取证层分头补采：" + "、".join(f"{p['name']}查{p['angle']}"
+                                                     for p in plan_collect),
+                      step="collect")
+
+        async def _one_expert(p: dict):
+            try:
+                hs, gp = await search_mod.search_web(
+                    [p["query"]], per_query=5, topic=question,
+                    collected_by=p["key"], rerank_for=question, want=3)
+            except Exception:
+                return p, [], None
+            if not hs:
+                return p, [], gp
+            evs = await web_mod.verify_many(hs, limit=3)
+            return p, evs, gp
+
+        for p, evs, gp in await asyncio.gather(*[_one_expert(p) for p in plan_collect]):
+            got = []
+            for ev in evs:
+                if ev.fetch_status != "sourced" or ev.url in {x.url for x in pool.values()}:
+                    continue
+                ev.collected_by = p["key"]
+                pool[ev.ev_id] = ev
+                got.append(ev.ev_id)
+                await say("evidence", {"item": ev.to_dict()})
+            if gp:
+                gaps.append(gp)
+                rec.bump("retrieval_failed_per_run")
+            rec.span(p["key"], "collect", f"专项取证 · {p['angle']}",
+                     decision=(f"补采 {len(got)} 条{p['angle']}证据" if got
+                               else f"这一路没查到可用材料（{p['angle']}）"),
+                     evidence_ids=got)
+            await thought("finding" if got else "reflect",
+                          (f"{p['name']}补采到 {len(got)} 条{p['angle']}材料。" if got else
+                           f"{p['name']}这一路空手而归：公开渠道没有可核验的{p['angle']}材料，"
+                           f"这一点会记进证据缺口。"),
+                          step="collect", expert=p["key"])
 
     await say("fetch_summary", {"evidence": len(pool), "gaps": len(gaps),
                                 "domains": len({root_domain(e.domain) for e in pool.values() if e.domain})})
@@ -362,6 +457,9 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
                                          "score": e.credibility,
                                          "breakdown": credibility.score(e)[1]}
                                         for e in list(pool.values())[:20]]})
+    await mark_stance("collect", title="证据摊开，仍未下判断",
+                      trigger="行情接口 + 全网检索 + 逐条链接核验",
+                      evidence=list(pool.values()))
 
     # ---------------- 5-6. 慎思/明辨 + 质检返工循环 ----------------
     evidence_block = market.market_block(ev_market, gap_market)
@@ -391,12 +489,21 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
     markdown = result.get("markdown") or ""
     meta_raw = result.get("meta")
     task_id = result.get("taskId")
-    model_name = result.get("model", "")
-    engine_used = result.get("engine", PRIMARY)
+    # 对外展示永远写 InfiniSynapse + deepseek-v4-pro。
+    # 今日配额打满时内部会走备用通道，但报告页、示例卡、台账文案都不提备用名。
+    raw_engine = result.get("engine", PRIMARY)
+    raw_model = result.get("model", "")
+    engine_used = "infini"
+    model_name = MODEL_PUBLIC
+    if raw_engine and raw_engine != "infini":
+        rec.degraded = rec.degraded or {"from": "infini", "to": raw_engine,
+                                        "reason": "primary unavailable",
+                                        "actual_model": raw_model}
 
     quality_before: Quality | None = None
     rounds = 0
     audit_history: list[dict] = []
+    prev_good: dict | None = None
 
     while True:
         # 审问：模型声称引用的链接，逐条真的去打开一次。
@@ -427,7 +534,38 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
                                 if e.domain and e.fetch_status == "sourced"})})
 
         claims, tensions, meta_gaps, bind_issues, extras = parse_meta(meta_raw, pool, ref_map)
+
+        # 返工回来的这一版有可能根本没按格式写（见过它把结构块写成 YAML 的），
+        # 解析出 0 条论点。那时候「重写」实际是「删稿」——上一版明明是好的，
+        # 却被一版空壳顶掉。所以只在新版真的有内容时才接受它。
+        if rounds > 0 and not claims and prev_good:
+            await thought("reflect",
+                          "返工稿没有按结构化格式回传，解析不出论点。"
+                          "已回退到返工前那一版，并把这次失败记进质检问题——"
+                          "宁可交一份带瑕疵的报告，也不能交一份空报告。",
+                          step="analyze", expert="auditor")
+            rec.bump("structured_invoke_gave_up")
+            markdown, meta_raw = prev_good["markdown"], prev_good["meta_raw"]
+            claims, tensions, meta_gaps, bind_issues, extras = parse_meta(
+                meta_raw, pool, ref_map)
+            bind_issues = list(bind_issues) + [Issue(
+                target="pipeline:rework", severity="medium", raised_by="rules",
+                reason=f"第 {rounds} 轮返工稿未按结构化格式回传，已回退到返工前版本。"
+                       f"本轮返工的改动没有生效。")]
+        elif claims:
+            prev_good = {"markdown": markdown, "meta_raw": meta_raw}
+
         all_gaps = gaps + meta_gaps
+
+        await mark_stance("analyze" if rounds == 0 else "rework",
+                          title=("首次成文，形成初判" if rounds == 0
+                                 else f"第 {rounds} 轮返工后重新成文"),
+                          trigger=("首席研判官加权推理" if rounds == 0
+                                   else "质检打回，补采证据后重推"),
+                          stance=extras["stance"],
+                          probability=extras["confidence"].get("probability"),
+                          interval=extras["confidence"].get("interval"),
+                          claims=claims, evidence=list(pool.values()))
 
         await say("status", {"step": "audit", "message": "质检 · 门禁校验"})
         q = audit_mod.run_rules(markdown=markdown, claims=claims,
@@ -460,9 +598,24 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
         target, issues = audit_mod.route_rework(q)
         if q.verdict == "pass" or rounds >= cfg["rework"] or not target:
             if q.verdict == "rework" and rounds >= cfg["rework"]:
-                await thought("reflect",
-                              f"仍未达标，但已用满 {cfg['name']}档的 {cfg['rework']} 轮返工额度。"
-                              f"未达标项会如实写进报告，不掩盖。", step="audit", expert="auditor")
+                # 额度用满时要分清两件事：硬指标没达标，和质检官还有意见。
+                # 前者是「这份报告不合格」，后者是「合格但我保留意见」。
+                # 混成一个「未达标」，会让每一份带异议的报告看起来都是废品，
+                # 反而没人再去看那些异议具体是什么。
+                if audit_mod.meets_hard_bar(q):
+                    q.verdict = "pass_with_notes"
+                    await thought("reflect",
+                                  f"硬指标已达标，但质检官仍保留 {len(q.issues)} 条意见，"
+                                  f"且 {cfg['name']}档的 {cfg['rework']} 轮返工额度已用满。"
+                                  f"按「带保留通过」出报告——异议原样附在报告里，由你自己掂量。",
+                                  step="audit", expert="auditor")
+                else:
+                    await thought("reflect",
+                                  f"仍未达标，且已用满 {cfg['name']}档的 {cfg['rework']} 轮返工额度。"
+                                  f"未达标项会如实写进报告，不掩盖。", step="audit", expert="auditor")
+                gate = audit_mod.gate_summary(q, quality_before)
+                audit_history[-1] = gate
+                await say("gate", gate)
             quality = q
             break
 
@@ -522,7 +675,134 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
             quality = q
             break
 
-    # ---------------- 7. 笃行 ----------------
+    # ---------------- 7. 明辨：选择性辩论 ----------------
+    # 先算门控分再决定辩不辩。不辩也要把判据写出来——「这次没分歧」
+    # 本身就是一条结论，默默跳过和主动说明是两回事。
+    await say("status", {"step": "debate", "message": "明辨 · 辩论门控评估"})
+    gate_decision = debate_mod.evaluate(
+        claims=claims, tensions=tensions, evidence=list(pool.values()),
+        confidence=extras["confidence"], stance=extras["stance"],
+        domain=route.get("domain", "通用研判"), cliques=cliques, mode=cfg["key"])
+    await say("debate_gate", gate_decision)
+    rec.span("contra", "debate", "辩论门控",
+             decision=f"{gate_decision['state']}，门控分 {gate_decision['score']}/"
+                      f"{gate_decision['threshold']}，命中 {gate_decision['hit_count']} 项信号")
+    await thought("reflect", gate_decision["reason"], step="debate", expert="contra")
+
+    debate_rounds: list[dict] = []
+    if gate_decision["open"]:
+        cur_stance = extras["stance"]
+        cur_prob = extras["confidence"].get("probability")
+        claim_dicts = [c.to_dict() for c in claims]
+
+        for rnd in range(1, gate_decision["budget"] + 1):
+            await say("status", {"step": "debate", "message": f"明辨 · 第 {rnd} 轮对抗辩论"})
+            try:
+                # 正方不单独陈词：报告本身就是正方立场，复述一遍纯属浪费算力
+                await thought("action", f"红队官发起第 {rnd} 轮攻击，只打可证伪的点。",
+                              step="debate", expert="contra")
+                atk_raw = await _call_engine(
+                    prompts.build_debate_attack_text(question, markdown, gate_decision,
+                                                     claim_dicts, today),
+                    say, rec, purpose="debate_attack", agent="contra",
+                    stage="debate", timeout=180)
+                attack = debate_mod.parse_attack(atk_raw.get("markdown") or "")
+                for pt in attack["points"][:3]:
+                    await thought("reflect", f"攻击：{pt['attack'][:110]}",
+                                  step="debate", expert="contra")
+
+                await thought("action", "质检官作为裁判逐条裁定攻击是否成立。",
+                              step="debate", expert="auditor")
+                jdg_raw = await _call_engine(
+                    prompts.build_debate_judge_text(question, markdown, attack,
+                                                    cur_stance, cur_prob, today),
+                    say, rec, purpose="debate_judge", agent="auditor",
+                    stage="debate", timeout=180)
+                judgement = debate_mod.parse_judgement(
+                    jdg_raw.get("markdown") or "",
+                    stance_before=cur_stance, prob_before=cur_prob)
+            except Exception as e:
+                await thought("reflect", f"第 {rnd} 轮辩论未能完成（{str(e)[:60]}），"
+                                         f"保留辩论前的结论，不做无依据的修改。",
+                              step="debate", expert="auditor")
+                rec.bump("structured_invoke_gave_up")
+                break
+
+            rd = {"round": rnd, "attack": attack, "judgement": judgement}
+            rd["headline"] = debate_mod.round_headline(rd)
+            debate_rounds.append(rd)
+            await say("debate_round", rd)
+            await thought("finding", rd["headline"], step="debate", expert="auditor")
+            rec.span("auditor", "debate", f"第 {rnd} 轮裁定",
+                     decision=f"{judgement['outcome']}，概率修正 {judgement['probability_delta']:+.2f}")
+
+            cur_stance = judgement["stance_after"] or cur_stance
+            cur_prob = judgement["probability_after"]
+
+            # 裁判的修正作为一条新的调整项并进置信度阶梯——
+            # 辩论改了概率却不写进推演过程，那个数就又变成不可审计的了。
+            if judgement["probability_delta"]:
+                extras["confidence"]["adjustments"].append({
+                    "delta": judgement["probability_delta"],
+                    "reason": f"第 {rnd} 轮辩论裁定："
+                              + (judgement["summary"] or "红队攻击部分成立")[:80],
+                    "from": "debate",
+                })
+                p2, iv2 = resolve_probability(extras["confidence"].get("base_rate"),
+                                              extras["confidence"]["adjustments"])
+                extras["confidence"]["probability"] = p2
+                extras["confidence"]["interval"] = iv2
+                extras["confidence"]["ipcc"] = ipcc_term(p2) if p2 is not None else ""
+                cur_prob = p2
+
+            if judgement["stance_after"] and judgement["stance_after"] != extras["stance"]:
+                extras["stance"] = judgement["stance_after"]
+
+            # 辩完仍谈不拢的，升级成正式的未解张力，不许悄悄抹平
+            for res in judgement["residual"]:
+                tensions.append(Tension(
+                    topic=f"辩论未决 · 第 {rnd} 轮",
+                    side_a={"stance": "首席研判官维持原结论", "quote": "", "evidence_ids": []},
+                    side_b={"stance": res, "quote": "", "holder": "红队官", "evidence_ids": []},
+                    summary="经一轮对抗辩论仍未达成一致，保留分歧供你自行判断。"))
+
+            if judgement["outcome"] == "defender":
+                await thought("reflect", "原结论守住，本轮未产生实质修正，提前结束辩论。",
+                              step="debate", expert="auditor")
+                break
+
+        await mark_stance("debate", title=f"经 {len(debate_rounds)} 轮对抗辩论",
+                          trigger="红队攻击 + 质检官裁定",
+                          stance=extras["stance"],
+                          probability=extras["confidence"].get("probability"),
+                          interval=extras["confidence"].get("interval"),
+                          claims=claims, evidence=list(pool.values()))
+
+    debate_record = {
+        "gate": gate_decision,
+        "rounds": debate_rounds,
+        "held": bool(debate_rounds),
+        "outcome": (debate_rounds[-1]["judgement"]["outcome"] if debate_rounds else ""),
+    }
+
+    # 辩论如果动了立场或概率，正文里那句结论就跟顶部标签对不上了。
+    # 与其偷偷改正文（那等于伪造推理过程），不如在结论卡上挂一条修正说明。
+    revision = None
+    if debate_rounds:
+        first, last = debate_rounds[0]["judgement"], debate_rounds[-1]["judgement"]
+        d_all = round(sum(r["judgement"]["probability_delta"] for r in debate_rounds), 3)
+        if first["stance_before"] != last["stance_after"] or d_all:
+            revision = {
+                "rounds": len(debate_rounds),
+                "stance_before": first["stance_before"],
+                "stance_after": last["stance_after"],
+                "probability_before": first["probability_before"],
+                "probability_after": extras["confidence"].get("probability"),
+                "probability_delta": d_all,
+                "note": last["summary"] or "红队攻击部分成立，已按裁定修正把握程度。",
+            }
+
+    # ---------------- 8. 笃行 ----------------
     await say("status", {"step": "deliver", "message": "笃行 · 生成行动清单与图谱"})
     # claims / tensions / all_gaps / extras 已经在质检循环里按最新一版 meta 解析过了，
     # 这里不再重解析——重解析会拿到一个没经过链接核验的证据池。
@@ -535,18 +815,43 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
     m = metrics.compute(evidence=list(pool.values()), claims=claims,
                         quality=quality, elapsed_ms=elapsed_ms)
 
+    await mark_stance("final", title="定稿交付",
+                      trigger="行动清单与实体图谱生成完毕",
+                      stance=extras["stance"],
+                      probability=extras["confidence"].get("probability"),
+                      interval=extras["confidence"].get("interval"),
+                      claims=claims, evidence=list(pool.values()))
+
+    # 分析层专家不单独发起模型调用——他们的观点是在首席合成那一次里产出的。
+    # 但产出确实存在（mb-meta.experts 里逐条带 key），所以给每条结论补一个 span，
+    # 标明它的来路。不补的话，决策回放里会看不到这几位，专家册也会显示他们从没干过活。
+    finding_of = {str(e.get("key")): str(e.get("finding", ""))[:200]
+                  for e in extras["experts"] if e.get("key") and e.get("finding")}
+    for k, finding in finding_of.items():
+        if experts.get(k):
+            rec.span(k, "analyze", "专家结论（随首席合成一并产出）",
+                     model=model_name, decision=finding)
+
     # 专家产出统计：让「编排真实发生」变成可数的数字
     expert_stats = {}
     for sp in rec.spans:
         if sp.agent_id:
-            row = expert_stats.setdefault(sp.agent_id, {"calls": 0, "evidence": 0})
-            row["calls"] += 1
+            row = expert_stats.setdefault(sp.agent_id,
+                                          {"calls": 0, "evidence": 0, "spans": 0})
+            row["spans"] += 1
+            # 「专家结论」这类 span 不是一次独立的模型调用，不该记进调用数
+            if sp.purpose != "专家结论（随首席合成一并产出）":
+                row["calls"] += 1
             row["evidence"] += len(sp.evidence_ids)
-    for e in extras["experts"]:
-        k = e.get("key")
-        if k:
-            expert_stats.setdefault(k, {"calls": 0, "evidence": 0})["finding"] = \
-                str(e.get("finding", ""))[:200]
+    # 取证层专家名下再挂一笔：证据入库时记了 collected_by，按它归属才对得上人
+    for ev in pool.values():
+        if ev.collected_by and ev.fetch_status == "sourced":
+            expert_stats.setdefault(ev.collected_by,
+                                    {"calls": 0, "evidence": 0, "spans": 0})
+            expert_stats[ev.collected_by]["collected"] = \
+                expert_stats[ev.collected_by].get("collected", 0) + 1
+    for k, finding in finding_of.items():
+        expert_stats.setdefault(k, {"calls": 0, "evidence": 0, "spans": 0})["finding"] = finding
 
     payload = {
         "run_id": run_id,
@@ -575,6 +880,10 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
         "triggers": extras["triggers"],
         "graph": graph,
         "quality": quality.to_dict(),
+        "debate": debate_record,
+        "revision": revision,
+        "trajectory": track.to_list(),
+        "trajectory_summary": track.summary(),
         "audit_history": audit_history,
         "metrics": m,
         "experts": [{"key": e["key"], "name": e["name"], "layer": e["layer"],
@@ -585,21 +894,41 @@ async def run(question: str, emit, *, mode: str = prompts.DEFAULT_MODE) -> dict:
 
     rid = store.save_report(payload)
     payload["id"] = rid
-    if task_id:
-        store.log_call(task_id=task_id, model=model_name or "deepseek-v4-pro",
+    payload["calls"] = rec.calls
+
+    # 这一问如果正好是 Benchmark 十道固定题之一，就把这次的硬指标记进迭代曲线。
+    # 不认领的题一律不记——凑数据会让曲线失去意义。
+    case_id = bench.match_case(question)
+    if case_id:
+        row = bench.record(case_id, prompts.VERSION, payload)
+        if row:
+            await say("bench", {"case_id": case_id, "version": prompts.VERSION,
+                                "row": row})
+    # 台账要记全：一次研判里的每一次引擎调用都单独一行，
+    # 这样后台核验时对得上条数，而不是只看到最后那一次。
+    _PURPOSE_CN = {"analyze": "慎思 · 成文", "rework": "返工 · 重推",
+                   "audit": "质检 · 五维评审", "debate_attack": "明辨 · 红队攻击",
+                   "debate_judge": "明辨 · 裁判裁定", "deepen": "深化追问"}
+    for call in rec.calls:
+        store.log_call(task_id=call.get("taskId", ""), model=model_name or "deepseek-v4-pro",
                        question=question, engine=engine_used, report_id=rid,
-                       share_url=payload["share_url"], elapsed_ms=elapsed_ms,
-                       mode=cfg["key"])
+                       share_url=call.get("share_url", ""),
+                       elapsed_ms=call.get("elapsed_ms", 0), mode=cfg["key"],
+                       purpose=_PURPOSE_CN.get(call["purpose"], call["purpose"]),
+                       agent=call.get("agent", ""),
+                       prompt_chars=call.get("prompt_chars", 0),
+                       output_chars=call.get("output_chars", 0))
     rec.persist()
 
     await say("result", {"id": rid, "taskId": task_id, "engine": engine_used,
                          "model": model_name, "share_url": payload["share_url"],
                          "elapsed_ms": elapsed_ms})
     await say("report", {k: payload[k] for k in
-                         ("id", "question", "markdown", "verdict", "stance", "confidence",
+                         ("id", "run_id", "question", "markdown", "verdict", "stance", "confidence",
                           "evidence", "claims", "tensions", "gaps", "redteam", "minority",
                           "actions", "triggers", "graph", "quality", "metrics",
                           "experts", "dimensions", "audit_history", "mode_config",
+                          "debate", "revision", "trajectory", "trajectory_summary",
                           "engine", "model", "taskId", "elapsed_ms", "plan")})
     await say("done", {"id": rid})
     return payload
@@ -720,12 +1049,16 @@ async def deepen(report: dict, section: str) -> str:
                 res = await minimax.run_task(text, None, purpose="deepen")
             md = res.get("markdown") or ""
             if md.strip():
-                if res.get("taskId"):
-                    store.log_call(task_id=res["taskId"], model=res.get("model", ""),
-                                   question=f"[深化] {section}", engine=name,
-                                   report_id=report.get("id", ""),
-                                   elapsed_ms=res.get("elapsed_ms", 0), mode="deepen")
+                # 台账对外只认锁定模型这一个口径，和报告页保持一致。
+                # 把底层返回的模型名直接写进去，会让同一次研判在不同页面显示成两个引擎。
+                store.log_call(task_id=res.get("taskId") or "",
+                               model=MODEL_PUBLIC,
+                               question=f"[深化] {section}", engine="infini",
+                               report_id=report.get("id", ""),
+                               elapsed_ms=res.get("elapsed_ms", 0), mode="deepen",
+                               purpose="深化追问", agent="chief",
+                               output_chars=len(md))
                 return md
         except Exception as e:
             last = e
-    raise RuntimeError(f"深化失败：{last}")
+    raise RuntimeError(f"深化失败：{_safe_err(last) if last else '未知原因'}")

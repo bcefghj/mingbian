@@ -508,6 +508,60 @@ code, kbd, .mono, .num {
 .demo-card:hover { border-color: var(--line-strong); background: var(--s2); }
 .demo-card .q { color: var(--t1); font-size: 14px; line-height: 1.55; }
 .demo-card .h { color: var(--t3); font-size: 12.5px; margin-top: 7px; line-height: 1.6; }
+.demo-nums {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 11px;
+  padding-top: 10px; border-top: 1px solid var(--line-soft);
+  font-size: 11.5px; color: var(--t4);
+}
+.demo-nums b { color: var(--t2); font-family: var(--mono, ui-monospace, monospace); margin-right: 2px; }
+
+/* ---------------------------------------------------------- 首页统计带 */
+
+.statband {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px;
+  background: var(--line); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+}
+.statcell { background: var(--s1); padding: 13px 14px; }
+.statcell b {
+  display: block; font-size: 22px; color: var(--t1); font-weight: 500;
+  letter-spacing: -.02em; line-height: 1.2;
+}
+.statcell .k { display: block; font-size: 12px; color: var(--t2); margin-top: 4px; }
+.statcell .d { display: block; font-size: 11px; color: var(--t4); margin-top: 5px; line-height: 1.5; }
+@media (max-width: 1180px) { .statband { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 560px) { .statband { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---------------------------------------------------------- 立场演变轨迹 */
+
+.traj-spark { width: 100%; height: 44px; display: block; margin: 4px 0 6px; }
+
+.traj { position: relative; padding-left: 4px; }
+/* 竖线只连相邻两点，所以画在行上而不是整列，末行自然断开 */
+.traj-row { position: relative; display: flex; gap: 13px; padding: 11px 0 11px 0; }
+.traj-row::before {
+  content: ''; position: absolute; left: 4px; top: 20px; bottom: -11px;
+  width: 1px; background: var(--line);
+}
+.traj-row:last-child::before { display: none; }
+.traj-dot {
+  flex: none; width: 9px; height: 9px; border-radius: 50%; margin-top: 5px;
+  background: var(--s2); border: 1.5px solid var(--line-strong); position: relative; z-index: 1;
+}
+.traj-dot.ground { border-color: var(--accent); }
+.traj-dot.firm { border-color: var(--ok); background: var(--ok); }
+.traj-dot.soften { border-color: var(--warn); background: var(--warn); }
+.traj-dot.reverse { border-color: var(--bad); background: var(--bad); }
+
+/* ---------------------------------------------------------- 辩论门控信号 */
+
+.sig {
+  border: 1px solid var(--line-soft); border-radius: 8px; padding: 9px 11px;
+  background: var(--s1);
+}
+.sig.hit { border-color: rgba(224, 163, 62, .32); background: rgba(224, 163, 62, .06); }
+.sig-mark { color: var(--t4); font-size: 12px; width: 10px; text-align: center; }
+.sig.hit .sig-mark { color: var(--warn); }
 
 /* ---------------------------------------------------------- 页脚 */
 

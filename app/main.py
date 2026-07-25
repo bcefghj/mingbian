@@ -15,9 +15,10 @@ from starlette.responses import (FileResponse, HTMLResponse, JSONResponse,
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import bench, demos, experts, infini, metrics, pipeline, prompts, store
+from . import bench, debate, demos, experts, infini, metrics, pipeline, prompts, store
 from .collectors import bocha
 from .models import IPCC_SCALE, SOURCE_LABEL, STRENGTH_LABEL
+from .stance import STAGE_CN
 from .credibility import AUTHORITATIVE, BASE_SCORE
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -75,6 +76,18 @@ async def methodology(request):
                          for k, v in BASE_SCORE.items()},
         "authoritative": sorted(AUTHORITATIVE),
         "metrics": metrics.DEFINITIONS,
+        "debate_gate": debate.SPEC,
+        "trajectory": {
+            "stages": STAGE_CN,
+            "shift_kinds": {
+                "init": "起点，尚未取证", "ground": "方向未变，证据底座变厚",
+                "firm": "结论被加固（概率上调 ≥ 5 个点）",
+                "soften": "结论被削弱（概率下调 ≥ 5 个点）",
+                "reverse": "方向性掉头", "hold": "本步未改变结论",
+            },
+            "note": "轨迹上的每个数字都是运行时实测状态，变化说明由代码按前后差值生成，"
+                    "不经模型润色。",
+        },
         "grounding": [
             {"key": "sourced", "label": "已取证", "note": "链接可达且取到正文"},
             {"key": "pending", "label": "检索中", "note": "模型给出但尚未核验"},
@@ -194,6 +207,17 @@ async def api_ledger(request):
 
 async def api_dashboard(request):
     return JSONResponse(metrics.global_snapshot())
+
+
+async def api_experts(request):
+    """名册 + 真实出场统计。专家册页面靠这个从静态卡片变成有据可查的记录。"""
+    usage = metrics.expert_usage()
+    return JSONResponse({
+        "roster": experts.roster_public(),
+        "always_on": experts.ALWAYS_ON,
+        "runs": usage["runs"],
+        "usage": usage["experts"],
+    })
 
 
 async def api_bench(request):
@@ -324,6 +348,7 @@ routes = [
     Route("/api/reports", api_reports),
     Route("/api/ledger", api_ledger),
     Route("/api/dashboard", api_dashboard),
+    Route("/api/experts", api_experts),
     Route("/api/bench", api_bench),
     Route("/api/bench/cases", api_bench_run),
     Route("/api/review", api_review, methods=["POST"]),

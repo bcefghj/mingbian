@@ -22,21 +22,18 @@ def list_demos():
             with open(p, encoding="utf-8") as f:
                 d = json.load(f)
             ex = d.get("experts")
-            if isinstance(ex, str):
-                experts_label = ex
-            elif isinstance(ex, list):
-                experts_label = f"{len(ex)} 位专家"
-            else:
-                experts_label = ""
+            experts_label = d.get("experts_label") or (
+                ex if isinstance(ex, str) else
+                f"{len(ex)} 位专家" if isinstance(ex, list) else "")
             ev = d.get("evidence")
-            if isinstance(ev, str):
-                evidence_label = ev
-            elif isinstance(ev, list):
-                evidence_label = f"{len(ev)} 条证据"
-            elif isinstance(ev, int):
-                evidence_label = f"{ev} 条证据"
-            else:
-                evidence_label = ""
+            evidence_label = d.get("evidence_label") or (
+                ev if isinstance(ev, str) else
+                f"{len(ev)} 条证据" if isinstance(ev, list) else
+                f"{ev} 条证据" if isinstance(ev, int) else "")
+            q = d.get("quality") or {}
+            conf = d.get("confidence") or {}
+            deb = (d.get("debate") or {}).get("gate") or {}
+            claims = d.get("claims") if isinstance(d.get("claims"), list) else []
             items[d["id"]] = {
                 "id": d["id"],
                 "question": d["question"],
@@ -44,6 +41,23 @@ def list_demos():
                 "tag": d.get("tag", ""),
                 "experts": experts_label,
                 "evidence": evidence_label,
+                # 卡片上多摆几个真数字：光有一句结论，看不出这份报告有多厚
+                "stance": d.get("stance", ""),
+                "probability": conf.get("probability"),
+                "ipcc": conf.get("ipcc", ""),
+                "claims": len(claims),
+                "claims_bound": sum(1 for c in claims
+                                    if isinstance(c, dict) and c.get("evidence_ids")),
+                "domains": q.get("independent_domains", 0),
+                "verdict_gate": q.get("verdict", ""),
+                "rework": q.get("rounds", 0),
+                "gaps": len(d.get("gaps") or []),
+                "tensions": len(d.get("tensions") or []),
+                "redteam": len(d.get("redteam") or []),
+                "debate_state": deb.get("state", ""),
+                "debate_score": deb.get("score"),
+                "seconds": d.get("seconds") or round((d.get("elapsed_ms") or 0) / 1000, 1),
+                "mode": (d.get("mode_config") or {}).get("name", ""),
             }
         except Exception:
             continue
@@ -69,6 +83,13 @@ def normalize(d: dict) -> dict:
 
     # 新格式：顶层已有 verdict / claims —— 只补缺字段
     if out.get("verdict") or out.get("claims"):
+        # 老种子脚本把这两个列表写成了摘要字符串。渲染器按列表用，
+        # 遇到字符串会整页崩掉；这里降级成空列表，宁可少一块也别白屏。
+        for k in ("evidence", "experts", "claims", "actions", "tensions", "gaps"):
+            if k in out and not isinstance(out[k], list):
+                if isinstance(out[k], str):
+                    out.setdefault(f"{k}_label", out[k])
+                out[k] = []
         out.setdefault("stance", "")
         out.setdefault("claims", [])
         out.setdefault("evidence", [])

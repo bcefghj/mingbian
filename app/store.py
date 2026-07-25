@@ -79,13 +79,20 @@ def list_reports(limit: int = 50) -> list[dict]:
 
 def log_call(*, task_id: str, model: str, question: str, engine: str = "infini",
              report_id: str = "", share_url: str = "", elapsed_ms: int = 0,
-             mode: str = "", status: str = "ok"):
-    """记录一次真实的引擎调用。只有拿到 taskId 的 Infini 调用才算数。"""
+             mode: str = "", status: str = "ok", purpose: str = "", agent: str = "",
+             prompt_chars: int = 0, output_chars: int = 0):
+    """记录一次真实的引擎调用。
+
+    记的是「编排实际发出了多少次推理请求」，所以每次成功返回都写一行。
+    平台回写了回执号（taskId）的那些额外可按号复查，但没有回执号不等于
+    这次调用没发生——把它们漏掉，台账的条数就对不上编排的实际动作。
+    """
     row = {
         "ts": int(time.time()), "taskId": task_id, "model": model,
         "engine": engine, "question": question[:120], "report_id": report_id,
         "share_url": share_url, "elapsed_ms": elapsed_ms, "mode": mode,
-        "status": status,
+        "status": status, "purpose": purpose, "agent": agent,
+        "prompt_chars": prompt_chars, "output_chars": output_chars,
     }
     try:
         with open(LEDGER_PATH, "a", encoding="utf-8") as f:
@@ -115,15 +122,30 @@ def read_ledger(limit: int = 200) -> list[dict]:
 
 
 def ledger_stats() -> dict:
-    rows = read_ledger(1000)
-    infini = [r for r in rows if r.get("engine") == "infini" and r.get("taskId")]
+    rows = read_ledger(2000)
+    with_task = [r for r in rows if r.get("taskId")]
     total_ms = sum(r.get("elapsed_ms") or 0 for r in rows)
+    by_purpose: dict[str, dict] = {}
+    for r in rows:
+        p = r.get("purpose") or "未标注环节"
+        b = by_purpose.setdefault(p, {"purpose": p, "count": 0, "ms": 0, "out": 0})
+        b["count"] += 1
+        b["ms"] += r.get("elapsed_ms") or 0
+        b["out"] += r.get("output_chars") or 0
+    for b in by_purpose.values():
+        b["avg_ms"] = int(b["ms"] / b["count"]) if b["count"] else 0
+    runs = {r.get("report_id") for r in rows if r.get("report_id")}
     return {
         "total_calls": len(rows),
-        "infini_calls": len(infini),
-        "with_task_id": len(infini),
+        "with_task_id": len(with_task),
         "avg_elapsed_ms": int(total_ms / len(rows)) if rows else 0,
+        "total_elapsed_ms": total_ms,
+        "total_output_chars": sum(r.get("output_chars") or 0 for r in rows),
         "models": sorted({r.get("model") for r in rows if r.get("model")}),
+        "runs": len(runs),
+        "calls_per_run": round(len(rows) / len(runs), 1) if runs else 0,
+        "by_purpose": sorted(by_purpose.values(), key=lambda b: -b["count"]),
+        "shared": sum(1 for r in rows if r.get("share_url")),
     }
 
 

@@ -39,19 +39,74 @@ CASES = [
 
 _BY_ID = {c["id"]: c for c in CASES}
 
+# 题面在 demo 与 Benchmark 之间措辞略有出入（「这轮周期见顶」/「这一轮见底」），
+# 靠这组关键词把同一道题认出来，免得同一题在曲线上分裂成两条。
+_MATCH_KEYS = {
+    "house": ("一线城市房价", "房价还会"),
+    "gold": ("黄金", "金价"),
+    "btc": ("比特币", "btc"),
+    "ai": ("ai 是不是泡沫", "ai泡沫", "算力投资", "ai 算力"),
+    "jobdd": ("offer", "值不值得去", "跳过去"),
+    "scam": ("日返", "稳赚不赔", "骗局"),
+    "reno": ("装修报价", "全包装修", "每平米 2800"),
+    "study": ("英国读", "读一年硕士", "留学"),
+    "shop": ("咖啡店", "开一家精品"),
+    "health": ("隔夜菜", "致癌"),
+}
+
 
 def get_case(cid: str) -> dict | None:
     return _BY_ID.get(cid)
 
 
-def record(case_id: str, version: str, payload: dict):
+def match_case(question: str) -> str:
+    """把一次研判认领到某道 Benchmark 题上。认不出就返回空串，不硬凑。"""
+    q = (question or "").lower().replace(" ", "")
+    for cid, keys in _MATCH_KEYS.items():
+        if any(k.lower().replace(" ", "") in q for k in keys):
+            return cid
+    return ""
+
+
+def already_recorded(case_id: str, payload: dict) -> bool:
+    """同一次运行只许进曲线一次。
+
+    示例卡是把同一份报告另存一份、改掉 id 得来的，所以光比 report_id 会把
+    一次运行数成两次，平均值全被稀释。run_id 是编排器给每次运行发的号，
+    另存时会跟着一起带过去，用它才认得出「这两份其实是同一次」。
+    """
+    rows = read_rows()
+    run_id = payload.get("run_id") or ""
+    if run_id and any(r.get("run_id") == run_id for r in rows):
+        return True
+    task_id = payload.get("taskId") or ""
+    if task_id and any(r.get("case_id") == case_id and r.get("taskId") == task_id
+                       for r in rows):
+        return True
+    # 早期示例卡另存时没带上 run_id，只能靠毫秒级耗时当指纹。
+    # 两次真实运行耗时精确到毫秒相同的概率可以忽略。
+    ms = payload.get("elapsed_ms") or 0
+    if ms and any(r.get("case_id") == case_id and r.get("elapsed_ms") == ms
+                  for r in rows):
+        return True
+    rid = payload.get("id") or ""
+    return bool(rid) and any(
+        r.get("case_id") == case_id and r.get("report_id") == rid for r in rows)
+
+
+def record(case_id: str, version: str, payload: dict, ts: int | None = None):
     """跑完一道题后记一行。字段全部来自真实运行结果。"""
+    if already_recorded(case_id, payload):
+        return None
     q = payload.get("quality") or {}
-    m = (payload.get("metrics") or {}).get("raw") or {}
     claims = payload.get("claims") or []
+    deb = (payload.get("debate") or {}).get("gate") or {}
     row = {
-        "ts": int(time.time()), "case_id": case_id, "version": version,
+        "ts": int(ts or payload.get("created_at") or time.time()),
+        "case_id": case_id, "version": version,
         "report_id": payload.get("id", ""),
+        "run_id": payload.get("run_id", ""),
+        "taskId": payload.get("taskId", ""),
         "evidence_count": q.get("evidence_count", 0),
         "independent_domains": q.get("independent_domains", 0),
         "claim_count": q.get("claim_count", 0),
@@ -65,6 +120,9 @@ def record(case_id: str, version: str, payload: dict):
         "tensions": len(payload.get("tensions") or []),
         "gaps": len(payload.get("gaps") or []),
         "strong_claims": sum(1 for c in claims if c.get("strength") == "strong"),
+        "debate_state": deb.get("state", ""),
+        "debate_score": deb.get("score"),
+        "debate_rounds": len((payload.get("debate") or {}).get("rounds") or []),
     }
     try:
         with open(BENCH_PATH, "a", encoding="utf-8") as f:
@@ -110,6 +168,11 @@ def snapshot() -> dict:
             "avg_credibility": round(sum(r.get("avg_credibility", 0) for r in group) / n, 1),
             "first_pass_rate": round(sum(1 for r in group if r["gate_pass_first_try"]) / n, 3),
             "avg_seconds": round(sum(r["elapsed_ms"] for r in group) / n / 1000, 1),
+            "avg_tensions": round(sum(r.get("tensions", 0) for r in group) / n, 1),
+            "avg_gaps": round(sum(r.get("gaps", 0) for r in group) / n, 1),
+            "debate_open_rate": round(
+                sum(1 for r in group if r.get("debate_state") == "open") / n, 3),
+            "cases": sorted({r.get("case_id") for r in group if r.get("case_id")}),
         })
 
     latest: dict[str, dict] = {}

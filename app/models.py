@@ -295,7 +295,10 @@ class Quality:
     dimension_coverage: float = 0.0
     avg_credibility: float = 0.0
     scores: dict = field(default_factory=dict)
-    verdict: str = "pass"        # pass | rework
+    # pass 硬指标达标且质检官无异议
+    # pass_with_notes 硬指标达标，但质检官仍有保留意见，且返工额度已用满
+    # rework 硬指标没达标
+    verdict: str = "pass"
     rounds: int = 0
     issues: list[dict] = field(default_factory=list)
     review: str = ""
@@ -327,6 +330,8 @@ class Quality:
         bits.append(f"{self.independent_domains} 个独立来源")
         if self.rounds:
             bits.append(f"经 {self.rounds} 轮返工")
+        if self.verdict == "pass_with_notes":
+            bits.append(f"质检官保留 {len(self.issues)} 条意见")
         return " · ".join(bits)
 
 
@@ -397,6 +402,9 @@ def bind_evidence_ids(raw_ids: Any, pool: dict[str, Evidence]) -> tuple[list[str
     return kept, issues
 
 
+P_FLOOR, P_CEIL = 0.03, 0.97
+
+
 def resolve_probability(base_rate: dict | None, adjustments: list[dict]) -> tuple[float | None, list[float] | None]:
     """基准率 + 调整项 -> 最终概率与区间。让 68% 这个数字可审计。"""
     if not base_rate or base_rate.get("value") is None:
@@ -410,7 +418,11 @@ def resolve_probability(base_rate: dict | None, adjustments: list[dict]) -> tupl
             p += float(adj.get("delta") or 0)
         except (TypeError, ValueError):
             continue
-    p = max(0.0, min(1.0, p))
+    # 认知上限：不出 0% 和 100%。
+    # 一份靠公开检索得来的研判，没有资格说某件事「绝对成立」——
+    # 剩下那 3 个百分点留给取证范围之外的未知，也留给我们自己会错的可能。
+    # 这个夹取本身写在方法论页里，不是偷偷抹平的。
+    p = max(P_FLOOR, min(P_CEIL, p))
     # 区间宽度随调整项数量收窄：调整依据越多，我们越有把握
     span = max(0.05, 0.18 - 0.02 * len(adjustments or []))
     return round(p, 3), [round(max(0.0, p - span), 3), round(min(1.0, p + span), 3)]

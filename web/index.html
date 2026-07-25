@@ -48,6 +48,9 @@
       </div>
       <div class="row wrapflex mt12" style="gap:7px" id="quickQs"></div>
     </div>
+
+    <!-- 已跑语料的真实汇总。数字每次刷新重算，删一份报告就会跟着变 -->
+    <div class="statband mt28" id="statBand"></div>
   </section>
 
   <!-- ============ 工作台（运行时显示） ============ -->
@@ -102,6 +105,32 @@
         <div class="card"><div class="skel w80"></div><div class="skel w60"></div></div>
         <div class="card"><div class="skel w60"></div><div class="skel w80"></div></div>
         <div class="card"><div class="skel w80"></div><div class="skel w40"></div></div>
+      </div>
+    </section>
+
+    <section class="mt28">
+      <div class="row-between mb12">
+        <h2 class="fs20">证据都从哪儿来的</h2>
+        <a class="t3 fs13" href="./about">可信度打分规则 →</a>
+      </div>
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-title row-between"><span>被引用最多的来源</span>
+            <span class="t4" id="domTotal" style="text-transform:none;letter-spacing:0"></span></div>
+          <div id="domList" class="col" style="gap:7px">
+            <div class="skel w80"></div><div class="skel w60"></div>
+          </div>
+          <div class="t4 fs11 mt12">按可注册主域归一后统计。
+            news.qq.com 与 m.qq.com 算同一家——否则一篇稿子转载三次就成了三个独立来源。</div>
+        </div>
+        <div class="card">
+          <div class="card-title">编排真实发生的证据</div>
+          <div id="orchStats" class="col" style="gap:9px">
+            <div class="skel w60"></div><div class="skel w80"></div>
+          </div>
+          <div class="t4 fs11 mt12">这几个数字如果全是 0，说明质检和辩论只是摆设。
+            它们不是配置项，是每次运行真实产生的。</div>
+        </div>
       </div>
     </section>
 
@@ -196,6 +225,54 @@
     $('#q').value = b.textContent; $('#q').focus();
   }));
 
+  /* 首页统计带：全部来自已落库报告的重算结果，不是写死的宣传数字 */
+  getJSON('./api/dashboard').then(d => {
+    const c = d.corpus || {}, l = d.ledger || {};
+    if (!c.documents) { $('#statBand').remove(); return; }
+    const cells = [
+      [c.documents, '份研判已落库', `平均每份 ${c.evidence_avg} 条证据`],
+      [c.evidence_total, '条证据逐条核验', `链接真去访问过，打不开的不入池`],
+      [c.independent_domains, '个独立来源主域', `按可注册主域归一去重`],
+      [Math.round(c.bound_ratio * 100) + '%', '论点绑定了证据', `${c.claims_bound} / ${c.claims_total} 条`],
+      [c.avg_credibility, '平均来源可信度', '纯规则打分，满分 100'],
+      [c.gaps_total, '条诚实缺口', '主动写明「这个我没查到」'],
+    ];
+    $('#statBand').innerHTML = cells.map(([v, k, dsc]) =>
+      `<div class="statcell"><b>${esc(String(v))}</b>` +
+      `<span class="k">${esc(k)}</span><span class="d">${esc(dsc)}</span></div>`).join('');
+
+    const doms = c.top_domains || [];
+    const max = doms.length ? doms[0].count : 1;
+    $('#domTotal').textContent = `共 ${c.independent_domains} 个主域`;
+    $('#domList').innerHTML = doms.slice(0, 9).map(x =>
+      `<div class="row" style="gap:10px;align-items:center">` +
+      `<span class="mono fs12 t3" style="width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.domain)}</span>` +
+      `<span class="bar grow"><i style="width:${Math.round(x.count / max * 100)}%"></i></span>` +
+      `<b class="mono fs12 t2" style="width:24px;text-align:right">${x.count}</b></div>`).join('')
+      || `<div class="t4 fs12">还没有证据入池。</div>`;
+
+    const rows = [
+      ['质检返工', `${c.rework_rounds} 轮`,
+        `${Math.round(c.rework_ratio * 100)}% 的研判被质检打回过至少一次`],
+      ['辩论门控', `${c.debate_held} / ${c.debate_gated}`,
+        c.debate_gated
+          ? `${Math.round(c.debate_open_ratio * 100)}% 的运行检出真实分歧并开辩，` +
+            `其余省下 ${c.calls_saved} 次推理调用`
+          : '尚未产生门控记录'],
+      ['未解张力', `${c.tensions_total} 组`, '两派证据都站得住，我们不替你抹平'],
+      ['红队反驳', `${c.redteam_total} 条`, '专职证伪，一致同意也可能一致地错'],
+      ['立场掉头', `${c.stance_reversals} 次`,
+        c.stance_reversals ? '取证或辩论之后真的改过判断' : '目前所有初判都扛住了后续环节'],
+      ['引擎调用', `${l.total_calls || 0} 次`,
+        `分布在质检、返工、辩论等 ${(l.by_purpose || []).length} 个环节，逐次记进台账`],
+    ];
+    $('#orchStats').innerHTML = rows.map(([k, v, dsc]) =>
+      `<div class="row-between" style="align-items:flex-start;gap:12px">` +
+      `<span class="fs13 t2 nowrap">${esc(k)}</span>` +
+      `<span class="grow t4 fs11">${esc(dsc)}</span>` +
+      `<b class="mono fs14 t1 nowrap">${esc(v)}</b></div>`).join('');
+  }).catch(() => { const b = $('#statBand'); if (b) b.remove(); });
+
   getJSON('./api/demos').then(d => {
     const items = d.demos || [];
     if (!items.length) {
@@ -203,14 +280,37 @@
         `还没有预置案例。在上面提一个问题就能生成第一份研判。</div>`;
       return;
     }
-    $('#demoGrid').innerHTML = items.map(x =>
-      `<div class="demo-card" data-demo="${esc(x.id)}">` +
-      `<div class="q">${esc(x.question)}</div>` +
-      (x.headline ? `<div class="h">${esc(x.headline)}</div>` : '') +
-      `<div class="row wrapflex mt12" style="gap:6px">` +
-      (x.tag ? `<span class="tag tag-accent">${esc(x.tag)}</span>` : '') +
-      (x.evidence ? `<span class="tag">${esc(x.evidence)}</span>` : '') +
-      `</div></div>`).join('');
+    const DEB = { open: ['tag-warn', '开过辩'], closed: ['', '无需辩论'],
+      no_budget: ['', '分歧待辩'] };
+    const GATE_CN = { pass: '质检通过', pass_with_notes: '带保留通过', rework: '质检未达标' };
+    const GATE_TAG = { pass: 'tag-ok', pass_with_notes: 'tag-accent', rework: 'tag-warn' };
+    $('#demoGrid').innerHTML = items.map(x => {
+      const stanceCls = /高风险|不可行|看空|骗局/.test(x.stance || '') ? 'tag-bad'
+        : /可行|看多|值得/.test(x.stance || '') ? 'tag-ok' : 'tag-accent';
+      const deb = DEB[x.debate_state];
+      return `<div class="demo-card" data-demo="${esc(x.id)}">` +
+        `<div class="row wrapflex mb8" style="gap:6px">` +
+        (x.tag ? `<span class="tag tag-accent">${esc(x.tag)}</span>` : '') +
+        (x.stance ? `<span class="tag ${stanceCls}">${esc(x.stance)}</span>` : '') +
+        (x.probability != null
+          ? `<span class="tag" title="${esc(x.ipcc || '')}">把握 ${Math.round(x.probability * 100)}%</span>` : '') +
+        `</div>` +
+        `<div class="q">${esc(x.question)}</div>` +
+        (x.headline ? `<div class="h">${esc(x.headline)}</div>` : '') +
+        `<div class="demo-nums">` +
+        `<span><b>${x.claims_bound}/${x.claims}</b> 论点有据</span>` +
+        `<span><b>${x.domains}</b> 独立来源</span>` +
+        `<span><b>${x.gaps}</b> 缺口</span>` +
+        `<span><b>${x.tensions}</b> 张力</span>` +
+        `</div>` +
+        `<div class="row wrapflex mt8" style="gap:5px">` +
+        (x.verdict_gate ? `<span class="tag ${GATE_TAG[x.verdict_gate] || 'tag-warn'}">` +
+          `${GATE_CN[x.verdict_gate] || '质检未达标'}</span>` : '') +
+        (x.rework ? `<span class="tag">返工 ${x.rework} 轮</span>` : '') +
+        (deb ? `<span class="tag ${deb[0]}">${deb[1]}</span>` : '') +
+        (x.seconds ? `<span class="tag mono">${x.seconds}s</span>` : '') +
+        `</div></div>`;
+    }).join('');
     MB.$$('#demoGrid .demo-card').forEach(c => c.addEventListener('click', () => {
       location.href = './report/' + c.dataset.demo;
     }));

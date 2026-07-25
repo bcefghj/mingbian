@@ -34,6 +34,17 @@
   </section>
 
   <section class="mt28">
+    <div class="row-between mb12"><h2 class="fs20">版本逐项对比</h2>
+      <span class="t4 fs12">同一套题、同一套口径，只有版本变了</span></div>
+    <div class="card">
+      <div style="overflow-x:auto"><table class="tbl" id="verTbl">
+        <thead><tr><th>指标</th></tr></thead><tbody></tbody>
+      </table></div>
+      <div class="t4 fs11 mt12" id="verNote"></div>
+    </div>
+  </section>
+
+  <section class="mt28">
     <div class="row-between mb12"><h2 class="fs20">题集</h2>
       <span class="t4 fs12">点「跑一次」会用当前版本重新研判，结果写回曲线</span></div>
     <div class="grid grid-2" id="cases"></div>
@@ -69,6 +80,8 @@
       $('#curve').innerHTML = spark(curve);
     }
 
+    renderVersions(curve);
+
     $('#cases').innerHTML = cases.map(c => {
       const l = latest[c.id];
       return `<div class="card"><div class="row-between mb8">` +
@@ -91,6 +104,52 @@
   }).catch(() => {
     $('#curve').innerHTML = '<div class="empty">读取失败。</div>';
   });
+
+  /* 版本对比表。better 决定箭头的颜色方向：耗时和无证据占比是越低越好 */
+  const ROWS = [
+    ['runs', '运行次数', v => v, null, '这一版一共跑了多少次题'],
+    ['cases', '覆盖题数', v => (v || []).length + ' / 10', 'up', '十道固定题里跑过几道'],
+    ['avg_domains', '平均独立来源', v => v, 'up', '按主域归一后的独立来源数，越多越难被单一信源带偏'],
+    ['bound_ratio', '论点绑证据率', v => Math.round(v * 100) + '%', 'up', '有多少论点真的挂上了证据'],
+    ['unsupported_ratio', '无证据结论占比', v => Math.round(v * 100) + '%', 'down', '越低越好'],
+    ['avg_credibility', '平均来源可信度', v => v, 'up', '纯规则打分，满分 100'],
+    ['first_pass_rate', '一次过检率', v => Math.round(v * 100) + '%', 'up', '不需要返工就通过质检的比例'],
+    ['avg_tensions', '平均未解张力', v => v, null, '不追求高低——它衡量的是敢不敢把分歧摆出来'],
+    ['avg_gaps', '平均诚实缺口', v => v, null, '主动写明「这个我没查到」的条数'],
+    ['debate_open_rate', '辩论开启率', v => Math.round((v || 0) * 100) + '%', null,
+      '门控判定存在真实分歧的比例。不是越高越好，一边倒的题本就不该辩'],
+    ['avg_seconds', '平均耗时', v => v + 's', 'down', '含取证、返工与辩论的端到端时间'],
+  ];
+
+  function renderVersions(curve) {
+    const tbl = $('#verTbl');
+    if (!curve.length) { tbl.closest('.card').innerHTML = '<div class="empty">还没有版本数据。</div>'; return; }
+    tbl.querySelector('thead').innerHTML = '<tr><th>指标</th>' +
+      curve.map(c => `<th class="num">${esc(c.version)}</th>`).join('') +
+      (curve.length > 1 ? '<th class="num">变化</th>' : '') + '</tr>';
+    tbl.querySelector('tbody').innerHTML = ROWS.map(([key, name, fmt, better, why]) => {
+      const cells = curve.map(c => `<td class="num mono t2">${esc(String(fmt(c[key])))}</td>`).join('');
+      let delta = '';
+      if (curve.length > 1 && better) {
+        const a = curve[0][key], b = curve[curve.length - 1][key];
+        const va = Array.isArray(a) ? a.length : Number(a || 0);
+        const vb = Array.isArray(b) ? b.length : Number(b || 0);
+        const diff = vb - va;
+        const good = better === 'up' ? diff > 0 : diff < 0;
+        const cls = diff === 0 ? 't4' : (good ? 'strength-strong' : 'strength-weak');
+        const shown = /率|占比/.test(name) ? Math.round(diff * 100) + '%' : Math.round(diff * 10) / 10;
+        delta = `<td class="num mono ${cls}">${diff > 0 ? '+' : ''}${shown}</td>`;
+      } else if (curve.length > 1) {
+        delta = `<td class="num t4">—</td>`;
+      }
+      return `<tr><td><b class="t2">${esc(name)}</b>` +
+        `<div class="t4 fs11 mt4">${esc(why)}</div></td>${cells}${delta}</tr>`;
+    }).join('');
+    $('#verNote').textContent = curve.length > 1
+      ? `“变化”一列是最新版本相对第一个版本的差值。绿色代表朝好的方向走，` +
+        `没有标注方向的指标（张力、缺口、辩论开启率）不做好坏判断——它们衡量的是诚实度，不是分数。`
+      : `目前只有 ${curve[0].version} 一个版本的数据。再跑一版才能比出高下。`;
+  }
 
   /* 用纯 SVG 画多序列折线，不引外部图表库 */
   function spark(curve) {

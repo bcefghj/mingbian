@@ -39,36 +39,41 @@ CASES = [
 
 
 async def run_one(case: dict) -> dict | None:
-    seen = {"report": None}
-
     async def emit(event, data):
-        if event == "report":
-            seen["report"] = data
-        elif event == "status" and not str(data.get("message", "")).startswith("引擎推理中"):
+        if event == "status" and not str(data.get("message", "")).startswith("引擎推理中"):
             print(f"  ({case['id']}) {data.get('step')} {data.get('message','')}", flush=True)
         elif event == "gate":
             print(f"  ({case['id']}) 质检 {data.get('verdict')} {data.get('headline','')}", flush=True)
-        elif event == "degraded":
-            print(f"  ({case['id']}) 降级 {data.get('from')}→{data.get('to')}："
-                  f"{str(data.get('reason'))[:90]}", flush=True)
+        elif event == "debate_gate":
+            print(f"  ({case['id']}) 门控 {data.get('state')} 分 {data.get('score')}/"
+                  f"{data.get('threshold')} 命中 {data.get('hit_count')} 项", flush=True)
+        elif event == "debate_round":
+            print(f"  ({case['id']}) {data.get('headline','')}", flush=True)
+        elif event == "bench":
+            print(f"  ({case['id']}) 已记入 Benchmark 曲线 {data.get('version')}", flush=True)
         elif event == "error":
             print(f"  ({case['id']}) 错误 {data}", flush=True)
 
     t0 = time.time()
-    await pipeline.run(case["question"], emit, mode=case["mode"])
-    rep = seen["report"]
+    # 用 run 的返回值而不是 report 事件：事件为了减小 SSE 体积裁掉了 trace 与 calls，
+    # 拿它当示例存盘的话，这几个案例的「决策回放」页会永远是空的——
+    # 而这六个案例恰恰是评委最先点开的。
+    rep = await pipeline.run(case["question"], emit, mode=case["mode"])
     if not rep:
         return None
 
     q = rep.get("quality") or {}
     n_ev = len([e for e in rep.get("evidence", []) if e.get("fetch_status") == "sourced"])
+    # 只加字段，绝不覆盖 evidence / experts 本体。
+    # 曾经这里把两个列表写成了展示用的一句话，结果示例报告页整页打不开，
+    # 专家册也数不到示例里的出场记录——摘要放进 *_label，本体留着。
     rep.update({
         "id": case["id"],
         "tag": case["tag"],
         "demo": True,
         "headline": rep.get("verdict") or "",
-        "experts": f"{len(rep.get('experts') or [])} 位专家",
-        "evidence": f"{n_ev} 条证据 · {q.get('independent_domains', 0)} 个独立来源",
+        "experts_label": f"{len(rep.get('experts') or [])} 位专家",
+        "evidence_label": f"{n_ev} 条证据 · {q.get('independent_domains', 0)} 个独立来源",
         "seeded_at": int(time.time()),
         "seconds": round(time.time() - t0, 1),
     })
@@ -87,12 +92,19 @@ async def seed_one(case: dict, sem: asyncio.Semaphore):
             print(f"[跳过] {case['id']} 没拿到报告（旧示例保留）", flush=True)
             return
         path = os.path.join(demos.DEMO_DIR, f"{case['id']}.json")
+        # 偶发：引擎这一跑没按格式回，解析出 0 条论点。这种空壳绝不能覆盖旧示例——
+        # 首页那张卡会变成「0/0 论点有据」，比没更新还难看。
+        if not (rep.get("claims") or []):
+            print(f"[跳过] {case['id']} 本次解析出 0 条论点，保留旧示例，稍后重跑", flush=True)
+            return
         with open(path, "w", encoding="utf-8") as f:
             json.dump(rep, f, ensure_ascii=False, indent=1)
         q = rep.get("quality") or {}
+        g = (rep.get("debate") or {}).get("gate") or {}
         print(f"[写入] {case['id']}｜{rep['seconds']}s｜质检 {q.get('verdict')}｜"
               f"论点 {len(rep.get('claims') or [])}｜证据 {len(rep.get('evidence') or [])}｜"
-              f"独立源 {q.get('independent_domains')}", flush=True)
+              f"独立源 {q.get('independent_domains')}｜门控 {g.get('state', '—')}｜"
+              f"轨迹 {len(rep.get('trajectory') or [])} 点", flush=True)
 
 
 async def main():

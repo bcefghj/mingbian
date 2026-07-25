@@ -9,7 +9,7 @@
 
   const STEP_OF_NODE = {
     intake: 'intake', plan: 'plan', boxue: 'collect', shenwen: 'verify',
-    shensi: 'analyze', audit: 'audit', duxing: 'deliver',
+    shensi: 'analyze', audit: 'audit', mingbian: 'debate', duxing: 'deliver',
   };
 
   // 这些后缀本身不是可注册域名，得多往前吃一段
@@ -64,6 +64,10 @@
              <div class="card-title">专家团</div>
              <div id="lvTeam" class="col" style="gap:5px"></div>
            </div>
+           <div class="card card-tight" id="lvTrajCard" style="display:none">
+             <div class="card-title">立场轨迹</div>
+             <div id="lvTraj" class="traj"></div>
+           </div>
          </aside>
 
          <main class="live-col">
@@ -85,6 +89,7 @@
            </div>
 
            <div class="card" id="lvGateCard" style="display:none"></div>
+          <div class="card" id="lvDebateCard" style="display:none"></div>
 
            <div class="card">
              <div class="card-title">思维流</div>
@@ -217,10 +222,11 @@
         node.querySelector('.nd-time').textContent = secs + 's';
       }
     });
-    const pctMap = { intake: 8, plan: 14, collect: 32, verify: 44, analyze: 70, audit: 84, deliver: 95 };
+    const pctMap = { intake: 8, plan: 14, collect: 32, verify: 44, analyze: 68,
+      audit: 80, debate: 89, deliver: 96 };
     $('#lvBar').style.width = (pctMap[step] || 10) + '%';
     const label = { intake: '拆解', plan: '计划', collect: '博学', verify: '审问',
-      analyze: '慎思', audit: '质检', deliver: '笃行' }[step] || '运行';
+      analyze: '慎思', audit: '质检', debate: '明辨', deliver: '笃行' }[step] || '运行';
     $('#lvStatus').textContent = label;
   };
 
@@ -334,9 +340,11 @@
   Live.prototype.on_gate = function (d) {
     const card = $('#lvGateCard');
     card.style.display = '';
-    const pass = d.verdict === 'pass';
+    const notes = d.verdict === 'pass_with_notes';
+    const pass = d.verdict === 'pass' || notes;
     card.innerHTML = `<div class="gate ${pass ? 'pass' : 'rework'}">` +
-      `<span class="tag ${pass ? 'tag-ok' : 'tag-warn'}">${pass ? '质检通过' : '质检未通过'}</span>` +
+      `<span class="tag ${notes ? 'tag-accent' : pass ? 'tag-ok' : 'tag-warn'}">` +
+      `${notes ? '带保留通过' : pass ? '质检通过' : '质检未通过'}</span>` +
       `<span class="grow t2 fs13">${esc(d.headline || '')}</span></div>`;
   };
 
@@ -351,10 +359,60 @@
     toast(`第 ${d.round} 轮返工：打回${d.to_cn}`);
   };
 
-  Live.prototype.on_degraded = function (d) {
-    toast(`${d.from} 通道异常，已降级到 ${d.to}`);
-    $('#lvStatusMsg').innerHTML = `<span class="tag tag-warn">已降级</span> ` +
-      `主引擎不可用，当前由 ${esc(d.to)} 接管`;
+  Live.prototype.on_degraded = function () {
+    // 故意空实现：备用通道是内部细节，不在工作台里点名。
+  };
+
+  /** 立场轨迹：每打一个点就长一行，让「结论怎么变成现在这样」是看着发生的。 */
+  Live.prototype.on_stance = function (d) {
+    $('#lvTrajCard').style.display = '';
+    const meta = {
+      init: ['', '起点'], ground: ['ground', '落地'], firm: ['firm', '加固'],
+      soften: ['soften', '削弱'], reverse: ['reverse', '掉头'], hold: ['', '维持'],
+    }[d.shift_kind] || ['', ''];
+    const row = el('div', { class: 'traj-row' });
+    row.innerHTML = `<div class="traj-dot ${meta[0]}"></div><div class="grow">` +
+      `<div class="row" style="gap:6px;align-items:baseline">` +
+      `<b class="t2 fs12">${esc(d.stage_cn)}</b>` +
+      `<span class="t4 fs11">${esc(meta[1])}</span><span class="spacer"></span>` +
+      (d.probability != null
+        ? `<b class="mono t1 fs12">${Math.round(d.probability * 100)}%</b>`
+        : `<span class="t4 fs11">未表态</span>`) + `</div>` +
+      `<div class="t4 fs11 mt4">${esc(d.shift)}</div></div>`;
+    $('#lvTraj').appendChild(row);
+    if (d.shift_kind === 'reverse') toast(`立场掉头：${d.stance}`);
+  };
+
+  /** 辩论门控。关掉的时候更要展示——「为什么这次不用辩」也是结论。 */
+  Live.prototype.on_debate_gate = function (d) {
+    const card = $('#lvDebateCard');
+    card.style.display = '';
+    const [cls, label] = {
+      open: ['tag-warn', '开辩'], closed: ['tag-ok', '无需辩论'],
+      no_budget: ['tag-accent', '有分歧 · 本档无额度'],
+    }[d.state] || ['tag', d.state || ''];
+    const sigs = (d.signals || []).map(s =>
+      `<span class="tag ${s.hit ? 'tag-warn' : ''}" title="${esc(s.detail)}" ` +
+      `${s.hit ? '' : 'style="opacity:.5"'}>${s.hit ? '✓ ' : ''}${esc(s.name)}</span>`).join('');
+    card.innerHTML = `<div class="card-title row-between"><span>辩论门控</span>` +
+      `<span class="tag ${cls}">${esc(label)}</span></div>` +
+      `<div class="row wrapflex" style="gap:6px">${sigs}</div>` +
+      `<div class="t3 fs12 mt8">${esc(d.reason)}</div>` +
+      `<div class="t4 fs11 mt4">门控分 ${d.score} / 阈值 ${d.threshold}</div>` +
+      `<div id="lvDebateRounds"></div>`;
+  };
+
+  Live.prototype.on_debate_round = function (d) {
+    const host = $('#lvDebateRounds');
+    if (!host) return;
+    const jg = d.judgement || {}, at = d.attack || {};
+    const box = el('div', { class: 'inset mt12' });
+    box.innerHTML = `<div class="row" style="gap:7px">` +
+      `<span class="tag tag-purple">第 ${d.round} 轮</span>` +
+      `<b class="t2 fs12 grow">${esc(d.headline || '')}</b></div>` +
+      (at.strongest ? `<div class="t3 fs12 mt8">最强攻击：${esc(at.strongest)}</div>` : '') +
+      (jg.summary ? `<div class="t4 fs11 mt4">裁定：${esc(jg.summary)}</div>` : '');
+    host.appendChild(box);
   };
 
   Live.prototype.on_clique = function (d) {

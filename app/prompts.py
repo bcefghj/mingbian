@@ -11,6 +11,12 @@ from .experts import EXPERT_ROSTER
 BRAND = "明辨 MINGBIAN"
 TAGLINE = "不给你观点，给你一条能追到底的证据链"
 
+# Benchmark 曲线按这个字段分组。改动了会影响研判质量的逻辑就要往上抬一档，
+# 否则曲线上两个版本混在一起，「这一版更好」就没法证明。
+#   v1.0  七节点 DAG + 质检返工
+#   v1.1  加入选择性辩论门控与立场演变轨迹
+VERSION = "v1.1"
+
 STAGES = [
     {"key": "boxue", "cn": "博学", "title": "广域取证",
      "desc": "多源并行检索、行情快照、页面抓取，先把能拿到的事实摊在桌上"},
@@ -18,8 +24,8 @@ STAGES = [
      "desc": "红队证伪、来源可信度打分、冲突检测，凡是站不住的先剔掉"},
     {"key": "shensi", "cn": "慎思", "title": "加权推理",
      "desc": "基准率打底、逐条调整、证据加权，把「为什么是这个数」摆出来"},
-    {"key": "mingbian", "cn": "明辨", "title": "出具研判",
-     "desc": "论点绑定证据、置信度分档、未解张力单列，不替你抹平分歧"},
+    {"key": "mingbian", "cn": "明辨", "title": "对抗与定谳",
+     "desc": "先算分歧度再决定辩不辩，辩完把攻防与裁定一起摆出来，不替你抹平分歧"},
     {"key": "duxing", "cn": "笃行", "title": "行动清单",
      "desc": "该做什么、还需核实什么、什么信号出现就要改主意"},
 ]
@@ -47,14 +53,20 @@ def mode_config(key: str) -> dict:
 
 
 CAPABILITIES = [
-    {"icon": "search", "title": "博学 · 双通道取证",
-     "desc": "引擎自己联网检索，明辨也自己查：博查全网索引 + 语义排序 + 行情接口，"
-             "每条证据都记下抓取时刻与可信度分数。"},
+    {"icon": "search", "title": "博学 · 三路取证",
+     "desc": "引擎自己联网检索，明辨泛检索兜底，被派遣的取证专家还各查各的切口："
+             "判决处罚、备案批复、投诉亲历分头去找，每条证据记在具体某位专家名下。"},
     {"icon": "check", "title": "审问 · 链接逐条核验",
      "desc": "模型引用的每个 URL 都真去访问一次。打不开的不算证据——"
              "这是「无证据不立论」在网络层的落实。"},
     {"icon": "shield", "title": "审问 · 红队证伪",
      "desc": "红队官的任务是挑毛病而不是求共识——一致同意也可能一致地错。"},
+    {"icon": "debate", "title": "明辨 · 选择性辩论",
+     "desc": "六项信号算分歧度，够分才开辩。证据一边倒时开辩只烧算力，"
+             "所以不辩也把判据写出来给你看。"},
+    {"icon": "trajectory", "title": "明辨 · 立场演变轨迹",
+     "desc": "从接题到定稿逐点留痕：结论是查完得出的，还是一开始就想好的，"
+             "看这条线就知道。"},
     {"icon": "scale", "title": "慎思 · 可审计概率",
      "desc": "不给裸百分比。基准率是多少、每项调整加减了几个点，全部摊开给你看。"},
     {"icon": "link", "title": "明辨 · 无证据不立论",
@@ -237,6 +249,84 @@ def build_audit_text(question: str, report: str, quality: dict) -> str:
  "review": "两三句话的总评"}}
 
 判定标准：任一维度低于 60 分，或有高危 issue，verdict 就是 rework。"""
+
+
+def build_debate_attack_text(question: str, report: str, gate: dict,
+                             claims: list[dict], today: str) -> str:
+    """红队发起攻击。门控已经判定「这题真有分歧」，这里不许和稀泥。"""
+    hits = "、".join(s["name"] for s in (gate.get("signals") or []) if s.get("hit"))
+    weak = [c for c in claims if c.get("strength") in ("weak", "unsupported", "contested")]
+    weak_lines = "\n".join(
+        f"- [{c.get('strength_label', '')}] {str(c.get('text', ''))[:110]}"
+        for c in weak[:6]) or "（无明显薄弱论点，请自行寻找攻击面）"
+
+    return f"""你是明辨的红队官。今天是 {today}。你的唯一职责是**把这份报告打穿**。
+
+原问题：{question}
+
+# 为什么这一轮被判定需要辩论
+门控命中的分歧信号：{hits or '综合分歧度超过阈值'}
+
+# 系统标记的薄弱论点（优先攻这些）
+{weak_lines}
+
+# 待攻击的报告
+{report[:8000]}
+
+# 攻击规则
+1. 每条攻击都必须落到**可证伪的点**上：指出用什么数据、什么来源、什么时间窗口能推翻它。
+2. 禁止「可能存在风险」「需要进一步观察」这类不可证伪的废话。
+3. 禁止在结尾写「总体而言结论仍然成立」——那是裁判的活，不是你的。
+4. 攻击的是论证而不是措辞：不要挑错别字、不要评价文风。
+5. 如果某条论点确实无懈可击，就不要硬攻；宁可只给两条硬的，也不要凑五条软的。
+
+只输出 JSON，不要任何其他文字：
+{{"points": [{{"claim": "被攻击的论点原文前 30 字",
+              "attack": "具体攻击：它哪里站不住，为什么",
+              "falsifiable": "用什么证据可以判定谁对谁错",
+              "severity": "high|medium|low"}}],
+  "strongest": "如果只能保留一条攻击，是哪条，为什么"}}"""
+
+
+def build_debate_judge_text(question: str, report: str, attack: dict,
+                            stance: str, probability: float | None,
+                            today: str) -> str:
+    """裁判裁定。有权改结论，但改动幅度受代码限制。"""
+    pts = "\n".join(
+        f"{i}. [{p.get('severity', 'medium')}] 针对「{p.get('claim', '')}」：{p.get('attack', '')}\n"
+        f"   判定方法：{p.get('falsifiable', '未给出')}"
+        for i, p in enumerate(attack.get("points") or [], 1)) or "（红队未给出结构化攻击）"
+    prob_txt = f"{probability * 100:.0f}%" if probability is not None else "未量化"
+
+    return f"""你是明辨的质检官，本轮担任辩论裁判。今天是 {today}。
+
+原问题：{question}
+当前立场：{stance or '未表态'}
+当前概率：{prob_txt}
+
+# 正方陈述
+正方就是下面这份报告本身，不再单独陈词。
+{report[:6000]}
+
+# 反方（红队）的攻击
+{pts}
+
+# 裁判规则
+1. 逐条裁定：攻击成立（upheld）、部分成立（partial）、还是不成立（rejected）。
+2. 判定依据只能是**证据与逻辑**，不能是「双方都有道理」。
+3. 攻击成立不等于结论要反转——要说清它动摇的是哪一部分。
+4. probability_delta 是你对最终概率的修正建议，范围 -0.2 到 +0.2。
+   没有实质性攻击成立时，就填 0，不要为了显得辩论有用而乱调。
+5. 如果辩完仍有谈不拢的地方，写进 residual_disagreement，不要强行调和。
+
+只输出 JSON，不要任何其他文字：
+{{"rulings": [{{"attack": "攻击要点前 20 字", "verdict": "upheld|partial|rejected",
+               "reason": "裁定理由"}}],
+  "stance_after": "辩论后的立场（可与辩论前相同）",
+  "probability_delta": 0.0,
+  "concessions": ["正方应当承认的点"],
+  "residual_disagreement": ["辩完仍未解决的分歧"],
+  "summary": "两三句话说清这一轮辩出了什么"}}"""
 
 
 def build_deepen_text(question: str, section: str, context: str, today: str) -> str:

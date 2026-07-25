@@ -24,6 +24,8 @@
       并且是可以被单独触发的取证能力，而不是提示词里的一个称谓。</p>
   </div>
 
+  <div class="statband" id="expBand"></div>
+
   <div id="layers"></div>
 
   <section class="mt28">
@@ -72,23 +74,70 @@
     `<tr><td class="t3 fs12">${esc(a)}</td><td><span class="tag tag-accent">${esc(b)}</span></td>` +
     `<td class="t3 fs12">${esc(c)}</td></tr>`).join('');
 
-  getJSON('./api/meta').then(m => {
-    const es = m.experts || [];
+  getJSON('./api/experts').then(m => {
+    const es = m.roster || [], use = m.usage || {}, runs = m.runs || 0;
+    const alwaysOn = m.always_on || [];
+    const maxDisp = Math.max(1, ...Object.values(use).map(u => u.dispatched || 0));
+    const active = Object.keys(use).length;
+    const totalSpans = Object.values(use).reduce((a, u) => a + (u.spans || 0), 0);
+    const totalEv = Object.values(use).reduce(
+      (a, u) => a + (u.evidence || 0) + (u.collected || 0), 0);
+
+    $('#expBand').innerHTML = [
+      [es.length, '位在册专家', '决策 3 · 分析 6 · 取证 7'],
+      [`${active}/${es.length}`, '位真的出过场', `统计自已落库的 ${runs} 份研判`],
+      [totalSpans, '条决策留痕', '每条都能在决策回放页按序步进'],
+      [totalEv, '条证据记在专家名下', '取证层按 collected_by 归属，可逐条追到报告'],
+      [alwaysOn.length, '位常驻决策层', '首席研判官、质检官、红队官每次都在场'],
+      [runs, '份研判可核对', '删掉一份报告，上面的数字就会跟着变'],
+    ].map(([v, k, dsc]) =>
+      `<div class="statcell"><b>${esc(String(v))}</b>` +
+      `<span class="k">${esc(k)}</span><span class="d">${esc(dsc)}</span></div>`).join('');
+
     const layers = ['决策', '分析', '取证'];
     $('#layers').innerHTML = layers.map(L => {
       const group = es.filter(e => e.layer === L);
-      return `<section class="mt16"><div class="row-between mb12">` +
+      return `<section class="mt28"><div class="row-between mb12">` +
         `<h2 class="fs20">${esc(L)}层 <span class="t4 fs13">${group.length} 位</span></h2>` +
         `<span class="t4 fs12">${esc(LAYER_DESC[L] || '')}</span></div>` +
-        `<div class="grid grid-3">` + group.map(e =>
-          `<div class="card"><div class="row-between mb8">` +
-          `<b class="t1 fs16">${esc(e.name)}</b>` +
-          `<span class="tag mono fs11">${esc(e.key)}</span></div>` +
-          `<div class="t3 fs12" style="line-height:1.7">${esc(e.role)}</div>` +
-          `<div class="t4 fs11 mt12">常用来源</div>` +
-          `<div class="row wrapflex mt4" style="gap:5px">` +
-          (e.sources || []).map(s => `<span class="tag">${esc(s)}</span>`).join('') +
-          `</div></div>`).join('') + `</div></section>`;
+        `<div class="grid grid-3">` + group.map(e => {
+          const u = use[e.key] ||
+            { dispatched: 0, calls: 0, spans: 0, evidence: 0, collected: 0, domains: [], findings: [] };
+          const f = (u.findings || [])[0];
+          const evAttr = (u.evidence || 0) + (u.collected || 0);
+          return `<div class="card"><div class="row-between mb8">` +
+            `<b class="t1 fs16">${esc(e.name)}</b>` +
+            `<span class="tag mono fs11">${esc(e.key)}</span></div>` +
+            `<div class="t3 fs12" style="line-height:1.7">${esc(e.role)}</div>` +
+            `<div class="t4 fs11 mt12">常用来源</div>` +
+            `<div class="row wrapflex mt4" style="gap:5px">` +
+            (e.sources || []).map(s => `<span class="tag">${esc(s)}</span>`).join('') +
+            `</div>` +
+            `<div class="inset mt12">` +
+            `<div class="row" style="gap:8px;align-items:center">` +
+            `<span class="t4 fs11 nowrap">出场热度</span>` +
+            `<span class="bar grow"><i style="width:${Math.round((u.dispatched || 0) / maxDisp * 100)}%"></i></span>` +
+            `<span class="mono fs11 t4 nowrap">${u.dispatched}/${runs}</span>` +
+            `</div>` +
+            `<div class="demo-nums" style="margin-top:8px;padding-top:8px">` +
+            `<span><b>${u.dispatched}</b> 次派遣</span>` +
+            `<span><b>${u.spans || 0}</b> 条留痕</span>` +
+            // 取证层才有证据归属；决策层与分析层的产出是判断而不是证据，
+            // 给他们摆一个恒为 0 的「条证据」，会让人以为这几位没干活。
+            (evAttr ? `<span><b>${evAttr}</b> 条证据</span>`
+              : `<span><b>${u.findings_count || 0}</b> 条结论入册</span>`) + `</div>` +
+            ((u.domains || []).length
+              ? `<div class="row wrapflex mt8" style="gap:4px">` +
+                u.domains.slice(0, 4).map(t => `<span class="tag fs11">${esc(t)}</span>`).join('') +
+                `</div>` : '') +
+            (f ? `<div class="t3 fs12 mt8" style="border-left:2px solid var(--line-strong);padding-left:8px">` +
+              `「${esc(f.text)}」` +
+              (f.report_id ? `<a class="fs11" style="display:block;margin-top:4px" ` +
+                `href="./report/${esc(f.report_id)}">出自：${esc(f.question)} →</a>` : '') +
+              `</div>`
+              : `<div class="t4 fs11 mt8">这一位还没在已落库的研判里留下结论。</div>`) +
+            `</div></div>`;
+        }).join('') + `</div></section>`;
     }).join('');
   }).catch(() => {
     $('#layers').innerHTML = '<div class="empty">读取专家名册失败。</div>';

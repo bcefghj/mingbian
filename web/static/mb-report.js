@@ -81,6 +81,23 @@
       `</div>`);
     bits.push(`<div class="fs20 t1" style="line-height:1.55;letter-spacing:-.015em">${esc(r.verdict || '（本次未生成一句话结论）')}</div>`);
 
+    // 辩论动过结论时挂一条修正说明。正文不改——改了就等于伪造推理过程。
+    const rev = r.revision;
+    if (rev) {
+      const dp = rev.probability_delta || 0;
+      bits.push(`<div class="inset mt12" style="border-left:2px solid var(--purple)">` +
+        `<div class="row wrapflex" style="gap:8px;align-items:baseline">` +
+        `<span class="tag tag-purple">经 ${rev.rounds} 轮辩论修正</span>` +
+        (rev.stance_before !== rev.stance_after
+          ? `<span class="fs12 t2">立场 ${esc(rev.stance_before || '—')} → ${esc(rev.stance_after || '—')}</span>` : '') +
+        (dp ? `<span class="fs12 t2">把握 ${pct(rev.probability_before)} → ${pct(rev.probability_after)}` +
+              `<b class="mono ${dp > 0 ? 'strength-strong' : 'strength-weak'}"> (${dp > 0 ? '+' : ''}${Math.round(dp * 100)})</b></span>` : '') +
+        `</div>` +
+        `<div class="t3 fs12 mt8">${esc(rev.note || '')}</div>` +
+        `<div class="t4 fs11 mt4">正文保留辩论前的原始表述，未做回溯改写——下方「选择性辩论」里可以看到完整攻防。</div>` +
+        `</div>`);
+    }
+
     // 摊开本次实际覆盖的分析角度。质检里的「维度完整性」打的就是这一项，
     // 只给分数不给清单，那个分数就没法被检验。
     const dims = (r.dimensions || []).filter(Boolean);
@@ -134,21 +151,27 @@
       `</div></span></div>`);
 
     return `<div class="inset">${rows.join('')}` +
-      `<div class="t4 fs11 mt12">这个数字是算出来的，不是估出来的：基准率打底，每项调整都写明理由。</div></div>`;
+      `<div class="t4 fs11 mt12">这个数字是算出来的，不是估出来的：基准率打底，每项调整都写明理由。` +
+      `上下夹在 3%–97%——靠公开检索得来的判断，没有资格说某件事绝对成立或绝对不成立。</div></div>`;
   }
 
   /** 质检门禁条。返工过就展示前后对比——这是编排真实发生的最强证据。 */
   function gateBar(r) {
     const q = r.quality || {};
     const hist = r.audit_history || [];
-    const pass = q.verdict === 'pass';
+    const notes = q.verdict === 'pass_with_notes';
+    const pass = q.verdict === 'pass' || notes;
     const last = hist[hist.length - 1] || {};
     const scores = q.scores || {};
 
     let inner = `<div class="gate ${pass ? 'pass' : 'rework'}">` +
-      `<span class="tag ${pass ? 'tag-ok' : 'tag-warn'}">${pass ? '质检通过' : '质检未达标'}</span>` +
+      `<span class="tag ${notes ? 'tag-accent' : pass ? 'tag-ok' : 'tag-warn'}">` +
+      `${notes ? '带保留通过' : pass ? '质检通过' : '质检未达标'}</span>` +
       `<span class="grow t2">${esc(q.headline || '')}</span>` +
-      `<span class="t4 fs12 nowrap">${(q.rounds || 0)} 轮返工</span></div>`;
+      `<span class="t4 fs12 nowrap">${(q.rounds || 0)} 轮返工</span></div>` +
+      (notes ? `<div class="t4 fs11 mt8">硬指标（论点绑定率、证据量、独立来源数、维度覆盖）` +
+        `已全部达标，但质检官仍有保留意见，且本档返工额度已用满。` +
+        `意见没有被抹掉，就列在下面——你可以据此自己给这份报告打折。</div>` : '');
 
     const dims = [
       ['evidence_sufficiency', '证据充分性'], ['dimension_completeness', '维度完整性'],
@@ -197,6 +220,166 @@
           `<span class="tag ${i.severity === 'high' ? 'tag-bad' : 'tag-warn'}">${esc(i.severity)}</span> ` +
           `<span class="mono t4">${esc(i.target)}</span> ${esc(i.reason)}</div>`).join('') +
         `</div></details>`;
+    }
+    return `<section class="card">${inner}</section>`;
+  }
+
+  /* -------------------------------------------------- 立场演变轨迹 */
+
+  const SHIFT_META = {
+    init: ['t4', '起点'], ground: ['tag-accent', '落地'],
+    firm: ['tag-ok', '加固'], soften: ['tag-warn', '削弱'],
+    reverse: ['tag-bad', '掉头'], hold: ['t4', '维持'],
+  };
+
+  /** 概率折线。没有概率的点（取证阶段还没形成立场）画成空心，不假装有值。 */
+  function trajectorySpark(points) {
+    const withP = points.map((p, i) => ({ i, p: p.probability }))
+      .filter(x => x.p != null);
+    if (withP.length < 2) return '';
+    const W = 100, H = 30, n = points.length - 1 || 1;
+    const x = i => (i / n) * W;
+    const y = v => H - v * H;
+    const path = withP.map((d, k) => `${k ? 'L' : 'M'}${x(d.i).toFixed(1)},${y(d.p).toFixed(1)}`).join(' ');
+    const dots = withP.map(d =>
+      `<circle cx="${x(d.i).toFixed(1)}" cy="${y(d.p).toFixed(1)}" r="1.8" fill="var(--accent)"/>`).join('');
+    return `<svg class="traj-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">` +
+      `<line x1="0" y1="${y(0.5)}" x2="${W}" y2="${y(0.5)}" stroke="var(--line-soft)" stroke-dasharray="2 2" stroke-width=".5"/>` +
+      `<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.2" vector-effect="non-scaling-stroke"/>` +
+      dots + `</svg>`;
+  }
+
+  /** 立场演变轨迹。回答「结论是查完得出的，还是一开始就想好的」。 */
+  function trajectorySection(r) {
+    const pts = r.trajectory || [];
+    if (pts.length < 2) return '';
+    const sum = r.trajectory_summary || {};
+
+    const rows = pts.map(p => {
+      const [cls, label] = SHIFT_META[p.shift_kind] || ['t4', '—'];
+      const dp = p.delta_probability;
+      const probCell = p.probability != null
+        ? `<b class="mono t1">${Math.round(p.probability * 100)}%</b>` +
+          (dp ? ` <span class="mono fs11 ${dp > 0 ? 'strength-strong' : 'strength-weak'}">` +
+                `${dp > 0 ? '+' : ''}${Math.round(dp * 100)}</span>` : '')
+        : `<span class="t4 fs12">未表态</span>`;
+      return `<div class="traj-row">` +
+        `<div class="traj-dot ${p.shift_kind}"></div>` +
+        `<div class="grow">` +
+        `<div class="row wrapflex" style="gap:7px;align-items:baseline">` +
+        `<b class="t1 fs13">${esc(p.stage_cn)}</b>` +
+        `<span class="tag ${cls.startsWith('tag') ? cls : ''}" ${cls.startsWith('tag') ? '' : 'style="opacity:.7"'}>${esc(label)}</span>` +
+        (p.stance ? `<span class="t2 fs12">立场 ${esc(p.stance)}</span>` : '') +
+        `<span class="spacer"></span>${probCell}</div>` +
+        `<div class="t3 fs12 mt4">${esc(p.shift)}</div>` +
+        (p.trigger ? `<div class="t4 fs11 mt4">触发：${esc(p.trigger)}</div>` : '') +
+        `<div class="t4 fs11 mt4">证据 ${p.evidence_count} · 独立来源 ${p.independent_domains}` +
+        (p.claims_total ? ` · 论点 ${p.claims_supported}/${p.claims_total} 有据` : '') + `</div>` +
+        `</div></div>`;
+    }).join('');
+
+    const growth = sum.evidence_growth || [];
+    return `<section class="card"><div class="card-title row-between">` +
+      `<span>立场演变轨迹</span>` +
+      `<span class="t4" style="text-transform:none;letter-spacing:0">${pts.length} 个节点` +
+      (sum.reversals ? ` · ${sum.reversals} 次掉头` : ' · 无方向性掉头') + `</span></div>` +
+      (sum.headline ? `<div class="t2 fs13 mb12">${esc(sum.headline)}</div>` : '') +
+      trajectorySpark(pts) +
+      `<div class="traj">${rows}</div>` +
+      `<div class="t4 fs11 mt12">每个节点的数字都是运行时的实测状态，变化说明由代码按前后差值生成，不经模型润色。` +
+      (growth.length === 2 ? `本次证据量从 ${growth[0]} 条长到 ${growth[1]} 条。` : '') +
+      `</div></section>`;
+  }
+
+  /* -------------------------------------------------- 选择性辩论 */
+
+  const GATE_STATE = {
+    open: ['tag-warn', '已开辩'], closed: ['tag-ok', '未开辩'],
+    no_budget: ['tag-accent', '有分歧 · 本档无额度'],
+  };
+  const RULING = {
+    upheld: ['tag-bad', '攻击成立'], partial: ['tag-warn', '部分成立'],
+    rejected: ['tag-ok', '攻击不成立'],
+  };
+
+  function debateSection(r) {
+    const d = r.debate;
+    if (!d || !d.gate) return '';
+    const g = d.gate;
+    const [stCls, stLabel] = GATE_STATE[g.state] || ['tag', g.state || ''];
+
+    const signals = (g.signals || []).map(s =>
+      `<div class="sig ${s.hit ? 'hit' : ''}">` +
+      `<div class="row" style="gap:7px">` +
+      `<span class="sig-mark">${s.hit ? '✓' : '·'}</span>` +
+      `<b class="fs12 ${s.hit ? 't1' : 't4'}">${esc(s.name)}</b>` +
+      `<span class="spacer"></span>` +
+      `<span class="mono fs11 ${s.hit ? 't2' : 't4'}">${s.hit ? '+' + s.weight : '0'}</span>` +
+      `</div><div class="t4 fs11 mt4">${esc(s.detail)}</div></div>`).join('');
+
+    let inner = `<div class="card-title row-between"><span>明辨 · 选择性辩论门控</span>` +
+      `<span class="tag ${stCls}">${esc(stLabel)}</span></div>` +
+      `<div class="t4 fs12 mb12">辩论很贵，一轮就是两次长上下文推理。所以先算分歧度，` +
+      `只有真的检出分歧才开辩——不开也把判据摆出来。</div>` +
+      `<div class="row inset" style="gap:16px;align-items:center">` +
+      `<div><div class="t4 fs11">门控分</div>` +
+      `<div class="fs20 mono t1">${g.score}</div></div>` +
+      `<div><div class="t4 fs11">开辩阈值</div>` +
+      `<div class="fs20 mono t3">${g.threshold}</div></div>` +
+      `<div class="grow"><div class="t4 fs11">命中信号</div>` +
+      `<div class="fs13 t2 mt4">${g.hit_count} / ${(g.signals || []).length} 项</div></div>` +
+      (g.calls_saved ? `<div><div class="t4 fs11">省下调用</div>` +
+        `<div class="fs20 mono t1">${g.calls_saved}</div></div>` : '') +
+      `</div>` +
+      `<div class="grid grid-3 mt12">${signals}</div>` +
+      `<div class="t3 fs12 mt12">${esc(g.reason)}</div>`;
+
+    (d.rounds || []).forEach(rd => {
+      const jg = rd.judgement || {}, at = rd.attack || {};
+      const pts = (at.points || []).map(p =>
+        `<div class="inset mt8" style="border-left:2px solid var(--bad)">` +
+        `<div class="row" style="gap:7px"><span class="tag ${p.severity === 'high' ? 'tag-bad' : 'tag-warn'}">${esc(p.severity)}</span>` +
+        (p.claim ? `<span class="t4 fs11">针对「${esc(p.claim)}」</span>` : '') + `</div>` +
+        `<div class="fs13 t2 mt8">${esc(p.attack)}</div>` +
+        (p.falsifiable ? `<div class="t4 fs11 mt4">判定方法：${esc(p.falsifiable)}</div>` : '') +
+        `</div>`).join('');
+
+      const rulings = (jg.rulings || []).map(x => {
+        const [c, l] = RULING[x.verdict] || ['tag', x.verdict];
+        return `<div class="inset mt8"><div class="row" style="gap:7px">` +
+          `<span class="tag ${c}">${l}</span>` +
+          `<span class="t3 fs12 grow">${esc(x.attack)}</span></div>` +
+          `<div class="t3 fs12 mt4">${esc(x.reason)}</div></div>`;
+      }).join('');
+
+      const dp = jg.probability_delta || 0;
+      inner += `<div class="mt16" style="border-top:1px solid var(--line-soft);padding-top:14px">` +
+        `<div class="row wrapflex" style="gap:8px">` +
+        `<span class="tag tag-purple">第 ${rd.round} 轮</span>` +
+        `<b class="t1 fs13">${esc(rd.headline || '')}</b></div>` +
+        `<div class="grid grid-2 mt12">` +
+        `<div><div class="t4 fs12 mb4">红队官 · 攻击</div>${pts || '<div class="t4 fs12">未给出结构化攻击</div>'}</div>` +
+        `<div><div class="t4 fs12 mb4">质检官 · 裁定</div>${rulings || '<div class="t4 fs12">未给出逐条裁定</div>'}</div>` +
+        `</div>` +
+        `<div class="inset mt12">` +
+        `<div class="row wrapflex" style="gap:14px">` +
+        `<span class="fs12 t3">立场 <b class="t1">${esc(jg.stance_before || '—')}</b> → <b class="t1">${esc(jg.stance_after || '—')}</b></span>` +
+        `<span class="fs12 t3">概率修正 <b class="mono ${dp > 0 ? 'strength-strong' : dp < 0 ? 'strength-weak' : 't1'}">` +
+        `${dp > 0 ? '+' : ''}${Math.round(dp * 100)}%</b></span>` +
+        (jg.delta_clamped ? `<span class="tag tag-warn" title="单轮辩论最多挪动 20 个百分点">修正幅度已被限幅</span>` : '') +
+        `</div>` +
+        (jg.summary ? `<div class="t3 fs12 mt8">${esc(jg.summary)}</div>` : '') +
+        ((jg.concessions || []).length ? `<div class="t4 fs11 mt8">正方让步：` +
+          jg.concessions.map(c => esc(c)).join('；') + `</div>` : '') +
+        ((jg.residual || []).length ? `<div class="t4 fs11 mt4">辩后仍未决：` +
+          jg.residual.map(c => esc(c)).join('；') + `</div>` : '') +
+        `</div></div>`;
+    });
+
+    if (d.rounds && d.rounds.length) {
+      inner += `<div class="t4 fs11 mt12">正方不单独陈词——上面那份报告本身就是正方立场。` +
+        `裁判单轮最多挪动 20 个百分点，防止一轮辩论把结论掀翻（那通常只说明模型在迎合最后一个说话的人）。` +
+        `裁定产生的概率修正会作为一条调整项并入上方的置信度阶梯。</div>`;
     }
     return `<section class="card">${inner}</section>`;
   }
@@ -437,7 +620,9 @@
     parts.push(verdictCard(r));
     if (r.metrics) parts.push(metricsStrip(r));
     if (r.quality) parts.push(gateBar(r));
+    parts.push(trajectorySection(r));
     parts.push(claimsSection(r, evMap, reviews));
+    parts.push(debateSection(r));
     parts.push(tensionsSection(r, evMap));
     parts.push(redteamSection(r));
 
@@ -561,5 +746,8 @@
     });
   }
 
-  global.MBReport = { render, chipHTML, injectChips, confidenceLadder };
+  global.MBReport = {
+    render, chipHTML, injectChips, confidenceLadder,
+    trajectorySection, debateSection,
+  };
 })(window);

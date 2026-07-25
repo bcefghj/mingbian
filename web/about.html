@@ -52,24 +52,33 @@
   </section>
 
   <section class="card mt16">
-    <div class="card-title">证据从哪来：双通道取证</div>
+    <div class="card-title">证据从哪来：三路取证</div>
     <div class="t3 fs13 mb12">
-      引擎自己会联网检索，明辨也自己查。两路都跑，是因为它们各有各的盲区——
-      引擎的检索由模型自主决定查什么，明辨的检索由领域规则决定往哪儿查。
+      引擎自己会联网检索，明辨也自己查，被派遣的取证专家还各查各的。
+      三路都跑，是因为它们各有各的盲区——引擎的检索由模型自主决定查什么，
+      泛检索由领域规则决定往哪儿查，专项检索则是奔着「最可能推翻结论的那类材料」去的。
     </div>
-    <div class="grid grid-2">
+    <div class="grid grid-3">
       <div class="inset"><b class="t1 fs13">InfiniSynapse 引擎自查</b>
         <div class="t3 fs12 mt8">deepseek-v4-pro 的 agent 循环会自主发起十几轮联网检索与页面抓取。
           这些动作在实时工作台的思维流里逐条可见，不是黑箱。</div></div>
-      <div class="inset"><b class="t1 fs13">明辨自有取证层</b>
+      <div class="inset"><b class="t1 fs13">明辨泛检索通道</b>
         <div class="t3 fs12 mt8">博查 Web Search 全网索引作主通道，返回结构化摘要与发布时间；
           语义排序按与问题的相关度重排，滤掉关键词碰巧命中的噪声；
           行情接口补实时数字；博查不可用时退到搜狗 / 百度 / 360 的 HTML 抓取兜底，
           并在报告里标明本次走的是哪一级通道。</div></div>
+      <div class="inset"><b class="t1 fs13">取证层专家分头补采</b>
+        <div class="t3 fs12 mt8">本次派遣的每位取证专家带着自己的切口再查一轮：
+          司法风控查判决与处罚，官方公告专家查备案与批复，社区口碑专家查投诉与亲历，
+          关联溯源专家查股东与实控人。每条补采到的证据都记在这位专家名下，
+          <a href="./experts">专家册</a>里的数字就是这么来的；
+          哪一路空手而归，也会照实写进证据缺口。</div></div>
     </div>
     <div class="t4 fs12 mt12">
-      为什么在意发布时间和正文摘要：可信度打分里「有没有发布日期」「时效多久」
-      「正文是否真的抓到」全是加减分项。拿不到这些字段，打分就只能靠猜。
+      为什么要拆成专项：判决书、处罚决定、投诉记录这类材料，泛检索几乎捞不到——
+      热度高的正面内容会把它们挤出前排。不专门去找，报告就会只剩「大家都在说的那一面」。
+      另外，可信度打分里「有没有发布日期」「时效多久」「正文是否真的抓到」全是加减分项，
+      所以三路都要求拿到发布时间与正文摘要，拿不到就降级处理。
     </div>
   </section>
 
@@ -140,6 +149,13 @@
       <thead><tr><th>术语</th><th>概率区间</th><th>可视化</th></tr></thead>
       <tbody id="ipcc"></tbody>
     </table></div>
+    <div class="t4 fs12 mt12">
+      最终概率一律夹在 <b class="t2">3%–97%</b> 之间，哪怕基准率加调整项算出来是 100%。
+      这不是为了好看：明辨的全部依据是公开可检索到的材料，
+      而「我们没查到反例」和「不存在反例」是两回事。留出的那 3 个百分点，
+      是给取证范围之外的未知，也是给我们自己会错的可能。
+      看到 97% 时请理解成「在能查到的范围内，找不到能推翻它的东西」，而不是「板上钉钉」。
+    </div>
   </section>
 
   <section class="card mt16">
@@ -165,6 +181,50 @@
     <div class="t4 fs12 mt12">
       返工额度按档位分配：速判 0 轮、深研 1 轮、专家 2 轮。用满额度仍未达标时，
       不达标项会如实写进报告，而不是悄悄放行。
+    </div>
+  </section>
+
+  <section class="card mt16">
+    <div class="card-title">选择性辩论门控</div>
+    <div class="t3 fs13" style="line-height:1.9">
+      多智能体辩论很贵：一轮就是两次长上下文推理。而大多数问题在证据摊开之后
+      并没有真正的分歧——「日返 1.5% 是不是骗局」不需要辩，证据一边倒。
+      这时候强行开辩，两个 Agent 只会互相客套一轮，烧掉算力又不改变结论，
+      还会让人误以为「辩过了所以更可靠」。
+      <b class="t2">所以我们先算分歧度，够分才开辩；不开也把判据写出来。</b>
+    </div>
+    <div class="mt12" style="overflow-x:auto"><table class="tbl">
+      <thead><tr><th>分歧信号</th><th class="num">权重</th><th>判定规则</th></tr></thead>
+      <tbody id="gateSignals"></tbody>
+    </table></div>
+    <div class="grid grid-2 mt12">
+      <div class="inset"><b class="t1 fs13">怎么定开不开</b>
+        <div class="t3 fs12 mt8" id="gateRule"></div></div>
+      <div class="inset"><b class="t1 fs13">辩论怎么组织</b>
+        <div class="t3 fs12 mt8">正方不单独陈词——报告本身就是正方立场，再复述一遍纯属浪费算力。
+          每轮两次调用：红队官发起攻击（只许打可证伪的点），质检官作为裁判逐条裁定。
+          裁判有权修正立场与概率，但单轮最多挪动 20 个百分点：
+          一轮辩论就把结论掀翻，通常只说明模型在迎合最后一个说话的人。</div></div>
+    </div>
+    <div class="t4 fs12 mt12">
+      裁定产生的概率修正会作为一条新的调整项并入置信度阶梯，而不是直接改掉那个数字——
+      辩论改了概率却不写进推演过程，这个数就又变成不可审计的了。
+      报告正文也不做回溯改写，改了就等于伪造推理过程；结论卡上会挂一条修正说明。
+    </div>
+  </section>
+
+  <section class="card mt16">
+    <div class="card-title">立场演变轨迹</div>
+    <div class="t3 fs13" style="line-height:1.9">
+      一份研判最容易被质疑的地方是：结论到底是查完之后得出的，还是一开始就想好了、
+      后面只是找材料凑。轨迹层专治这个——流水线每个关键节点打一个点，
+      记下当时的立场、概率、论点数与证据结构，并把两点之间的差算出来。
+      <b class="t2">所有变化说明由代码按前后差值生成，不经模型润色。</b>
+    </div>
+    <div class="grid grid-3 mt12" id="shiftKinds"></div>
+    <div class="t4 fs12 mt12">
+      看完这条线就能回答三个问题：引擎最初的先验是什么、取证之后有没有被推翻、
+      质检打回那一轮究竟改善了什么、辩论有没有真的动摇结论。
     </div>
   </section>
 
@@ -218,6 +278,29 @@
         `<i style="position:absolute;left:${lo}%;width:${Math.max(2, hi - lo)}%;top:0;bottom:0;` +
         `background:var(--accent);opacity:.6;border-radius:3px"></i></div></td></tr>`;
     }).join('');
+
+    const g = d.debate_gate || {};
+    $('#gateSignals').innerHTML = (g.signals || []).map(s =>
+      `<tr><td><b class="t1">${esc(s.name)}</b></td>` +
+      `<td class="num mono t2">+${s.weight}</td>` +
+      `<td class="t3 fs12">${esc(s.rule)}</td></tr>`).join('');
+    $('#gateRule').innerHTML =
+      `门控分 = 命中信号的权重之和，满分 ` +
+      `${(g.signals || []).reduce((a, s) => a + s.weight, 0).toFixed(1)}。` +
+      `达到阈值 <b class="mono t1">${g.threshold}</b> 才开辩；` +
+      `高风险领域（${esc((g.high_stakes_domains || []).join('、'))}）判错代价不对称，` +
+      `阈值下调 <b class="mono t1">${g.high_stakes_bonus}</b>。` +
+      `辩论额度按档位分配：` +
+      Object.keys(g.rounds_by_mode || {}).map(k =>
+        `${esc(k)} ${g.rounds_by_mode[k]} 轮`).join(' / ') + `。`;
+
+    const tj = d.trajectory || {};
+    const kinds = tj.shift_kinds || {};
+    $('#shiftKinds').innerHTML = Object.keys(kinds).map(k =>
+      `<div class="inset"><div class="row" style="gap:8px;align-items:center">` +
+      `<span class="traj-dot ${esc(k)}" style="margin:0"></span>` +
+      `<b class="mono fs12 t2">${esc(k)}</b></div>` +
+      `<div class="t3 fs12 mt8">${esc(kinds[k])}</div></div>`).join('');
 
     const m = d.metrics || {};
     $('#metricDefs').innerHTML = Object.keys(m).map(k =>

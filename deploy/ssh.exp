@@ -1,0 +1,14 @@
+#!/usr/bin/expect -f
+# 用法：ssh.exp <远程命令>
+# 服务器只开了密码登录，交互式输密码没法写进脚本，所以用 expect 代劳。
+# 密码从环境变量 MB_SSH_PASS 读，不写死在文件里。
+set timeout 900
+set cmd [lindex $argv 0]
+set pass $env(MB_SSH_PASS)
+spawn ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 root@47.119.112.225 $cmd
+expect {
+  "password:" { send "$pass\r"; exp_continue }
+  eof
+}
+catch wait result
+exit [lindex $result 3]

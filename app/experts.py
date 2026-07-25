@@ -140,5 +140,43 @@ def get(key: str) -> dict | None:
     return _BY_KEY.get(key)
 
 
+# 每位取证层专家自己的检索切口。
+#
+# 这一份表是「可派遣专家」这句话的兑现处：没有它，取证层十几位专家共用
+# 同一次泛检索，产出全记在一个人名下，专家册上其余几位永远是 0 条证据——
+# 那样他们就只是提示词里的称谓，而不是能被单独触发的能力。
+# 切口刻意写成中文检索词而不是 site: 限定：公开检索通道对 site: 支持不稳，
+# 用领域词更能真的把结果拉到那一类源上。
+COLLECT_ANGLES: dict[str, dict] = {
+    "sentiment": {"suffix": "网友评价 讨论 争议", "angle": "多平台舆情与情绪走向"},
+    "entity": {"suffix": "公司 背景 股东 实际控制人 关联", "angle": "主体背景与关联关系"},
+    "judicial": {"suffix": "判决 行政处罚 立案 被执行", "angle": "涉诉与监管处罚记录"},
+    "official": {"suffix": "官方公告 备案 资质 监管批复", "angle": "一手公告与资质备案"},
+    "community": {"suffix": "真实用户 亲身经历 投诉 避坑", "angle": "一手用户体感与投诉"},
+    "price": {"suffix": "历史价格 走势 涨跌 数据", "angle": "价格曲线与比价"},
+    "timeline": {"suffix": "事件始末 时间线 来龙去脉", "angle": "事件时序还原"},
+}
+
+
+def collect_plan(question: str, team: list[dict], limit: int = 4) -> list[dict]:
+    """给本次派遣里的取证层专家各自分一个检索切口。
+
+    只覆盖真的被派上场的人：没派遣就不检索，专家册上那一栏也就该是空的。
+    """
+    q = (question or "").strip()
+    out = []
+    for e in team:
+        if e.get("layer") != "取证":
+            continue
+        spec = COLLECT_ANGLES.get(e["key"])
+        if not spec:
+            continue
+        out.append({"key": e["key"], "name": e["name"], "angle": spec["angle"],
+                    "query": f"{q} {spec['suffix']}".strip()})
+        if len(out) >= limit:
+            break
+    return out
+
+
 def roster_public() -> list[dict]:
     return EXPERT_ROSTER
