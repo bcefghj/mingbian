@@ -193,7 +193,7 @@ async def collect_live_signals(
     ]
     ok = 0
 
-    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=18.0, follow_redirects=True) as client:
         tasks = []
         # 黄金 / 白银 / 美元 / 美债 / 标普
         symbols = []
@@ -211,13 +211,16 @@ async def collect_live_signals(
 
         async def one_yahoo(sym: str, label: str):
             nonlocal ok
-            item = await _yahoo_last(client, sym)
-            if not item and sym.lower().startswith("gc"):
-                item = await _stooq_last(client, "xauusd")
-                if item:
-                    label = "黄金现货 XAUUSD (stooq)"
-            if not item and "DX" in sym:
-                item = await _yahoo_last(client, "DX=F")
+            try:
+                item = await _yahoo_last(client, sym)
+                if not item and "gc" in sym.lower():
+                    item = await _stooq_last(client, "xauusd")
+                    if item:
+                        label = "黄金现货 XAUUSD (stooq)"
+                if not item and "DX" in sym:
+                    item = await _yahoo_last(client, "DX=F")
+            except Exception:
+                item = None
             if item and item.get("price") is not None:
                 ok += 1
                 line = _line(item, label)
@@ -225,7 +228,7 @@ async def collect_live_signals(
                 if emit:
                     await emit("thought", {
                         "kind": "action",
-                        "text": f"已取证：{label} = {item['price']:.4g}（{item.get('as_of')}）",
+                        "text": f"已取证：{label} = {_fmt_price(float(item['price']))}（{item.get('as_of')}）",
                         "step": "collect",
                     })
                 return item
@@ -242,30 +245,35 @@ async def collect_live_signals(
 
         async def extras():
             nonlocal ok
-            if want_crypto or want_macro:
-                btc = await _coingecko_btc(client)
-                if btc and btc.get("price") is not None:
-                    # 若 yahoo 已有 BTC 可能重复，仍可保留 coingecko 作为交叉
+            try:
+                if want_crypto or want_macro:
+                    btc = await _coingecko_btc(client)
+                    if btc and btc.get("price") is not None:
+                        ok += 1
+                        rows.append(_line(btc, "比特币 CoinGecko 现价"))
+                        if emit:
+                            await emit("thought", {
+                                "kind": "action",
+                                "text": f"已取证：CoinGecko BTC = {_fmt_price(float(btc['price']))}",
+                                "step": "collect",
+                            })
+            except Exception:
+                pass
+            try:
+                fg = await _fear_greed(client)
+                if fg and fg.get("price") is not None:
                     ok += 1
-                    rows.append(_line(btc, "比特币 CoinGecko 现价"))
+                    rows.append(
+                        f"- CNN Fear&Greed：{fg['price']:.1f}（{fg.get('trend') or ''}）｜抓取时点 {fg.get('as_of')}"
+                    )
                     if emit:
                         await emit("thought", {
                             "kind": "action",
-                            "text": f"已取证：CoinGecko BTC = {btc['price']:.4g}",
+                            "text": f"已取证：Fear&Greed = {fg['price']:.1f}",
                             "step": "collect",
                         })
-            fg = await _fear_greed(client)
-            if fg and fg.get("price") is not None:
-                ok += 1
-                rows.append(
-                    f"- CNN Fear&Greed：{fg['price']:.1f}（{fg.get('trend') or ''}）｜抓取时点 {fg.get('as_of')}"
-                )
-                if emit:
-                    await emit("thought", {
-                        "kind": "action",
-                        "text": f"已取证：Fear&Greed = {fg['price']:.1f}",
-                        "step": "collect",
-                    })
+            except Exception:
+                pass
 
         await asyncio.gather(*tasks, return_exceptions=True)
         await extras()
