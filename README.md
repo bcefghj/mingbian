@@ -15,6 +15,7 @@
 | **代码仓库** | https://github.com/bcefghj/mingbian |
 | **引擎锁定** | InfiniSynapse · `deepseek-v4-pro` |
 | **当前版本** | v1.1（八节点 DAG + 选择性辩论 + 立场轨迹） |
+| **交接文档** | [docs/HANDOFF.md](./docs/HANDOFF.md)（给下一任 AI / 同学：现状、硬约束、踩坑、部署） |
 
 ---
 
