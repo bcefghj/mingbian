@@ -288,10 +288,10 @@ function renderReport(q,markdown,meta,streaming){
     }
     if((meta.divergences||[]).length){html+=`<div class="block"><h3>◈ 关键背离</h3>`+meta.divergences.map(d=>`<div class="diverg">⚠ ${esc(d)}</div>`).join("")+`</div>`;}
   }
-  // 有结构化 meta 时默认折叠原文，避免思维链/英文草稿刷屏
+  // 有结构化 meta 时默认展开文字报告，可一键收起
   if(markdown && meta && Object.keys(meta).length && !streaming){
-    html+=`<div class="md-toggle" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.nextElementSibling.style.display==='none'?'▸ 展开完整文字报告':'▾ 收起完整文字报告'">▸ 展开完整文字报告</div>`;
-    html+=`<div style="display:none"><div class="report-md" id="md">${marked.parse(markdown||"")}</div></div>`;
+    html+=`<div class="md-toggle" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.nextElementSibling.style.display==='none'?'▸ 展开完整文字报告':'▾ 收起完整文字报告'">▾ 收起完整文字报告</div>`;
+    html+=`<div style="display:block"><div class="report-md" id="md">${marked.parse(markdown||"")}</div></div>`;
   } else if(markdown){
     html+=`<div class="block" style="padding:0;background:transparent;border:none"><div class="report-md ${streaming?'cursorblink':''}" id="md">${marked.parse(markdown||"")}</div></div>`;
   }
