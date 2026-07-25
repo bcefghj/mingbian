@@ -42,11 +42,16 @@
   </section>
 
   <section class="mt28">
-    <div class="grid grid-2">
+    <div class="grid grid-3">
       <div class="card">
         <div class="card-title">人工复核</div>
         <div id="reviews"></div>
         <div class="t4 fs11 mt12">用户在报告里对每条论点投的票。人工修正率越低，说明机器判断越靠得住。</div>
+      </div>
+      <div class="card">
+        <div class="card-title">关注清单</div>
+        <div id="watchlist"></div>
+        <div class="t4 fs11 mt12">研判台点「加入关注」后出现在这里。变化提醒走站内告警，不外发。</div>
       </div>
       <div class="card">
         <div class="card-title">观测告警</div>
@@ -103,6 +108,17 @@
       `<td><a class="fs12" href="./trace/${esc(r.id)}">回放</a></td></tr>`).join('')
       : `<tr><td colspan="5"><div class="t4 fs12">还没有研判记录。</div></td></tr>`;
   }).catch(() => { });
+
+  getJSON('./api/watch').then(d => {
+    const items = d.items || [];
+    $('#watchlist').innerHTML = items.length
+      ? items.slice(0, 8).map(x =>
+        `<div class="inset mt8"><div class="t2 fs13">${esc(x.topic || '')}</div>` +
+        `<div class="t4 fs11 mt4">${esc(fmtTime(x.ts))} · ` +
+        (x.report_id ? `<a href="./report/${esc(x.report_id)}">看报告</a>` : '尚未关联报告') +
+        `</div></div>`).join('')
+      : `<div class="t3 fs12">还没有关注项。跑完一次研判后点「加入关注」。</div>`;
+  }).catch(() => { $('#watchlist').innerHTML = '<div class="t3 fs12">读取失败。</div>'; });
 
   getJSON('./api/alerts').then(d => {
     const a = d.alerts || [], rules = d.rules || {};
